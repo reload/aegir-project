@@ -1,0 +1,90 @@
+<?php
+
+include_once('hosting_project.node.inc');
+
+/**
+ * Implementation of hook_menu().
+ */
+function hosting_project_menu() {
+  $items = array();
+  $items['hosting/project'] = array(
+    'title' => 'Projects',
+    'description' => 'List of projects',
+    'page callback' => 'hosting_project_listing',
+    'access arguments' => array('view project'));
+
+  $items['hosting/project/access'] = array(
+    'title' => 'Access',
+    'description' => 'Github oauth callback',
+    'page callback' => 'hosting_project_access',
+    'access arguments' => array('view project'));
+
+  return $items;
+}
+
+
+// define('GITHUB_APP_CLIENT_ID', 'cc72ea5b941820cc18a4');
+// define('GITHUB_APP_CLIENT_SECRET', '31c70e5ce3598db60d00b37fb7b01319efd78352');
+// define('GITHUB_API_URL', 'https://github.com/login');
+// define('TWITTER_LOGIN_SIG_METHOD', 'HMAC-SHA1');
+
+
+// function hosting_project_listing(){
+//   // attempt to load the consumer
+//   $consumer = DrupalOAuthConsumer::load(GITHUB_APP_CLIENT_ID, FALSE);
+//   if (!$consumer) {
+//     // create a new
+//     $consumer = new DrupalOAuthConsumer(GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET);
+//     $consumer->configuration['provider_url'] = GITHUB_API_URL;
+
+//     $consumer->write();
+//   }
+//   $sig_method = DrupalOAuthClient::signatureMethod();
+//   $client = new DrupalOAuthClient($consumer, NULL, $sig_method);
+
+
+//   // TODO, we should use some kind of secret as state
+//   $params = array(
+//     'client_id' => GITHUB_APP_CLIENT_ID,
+//     'redirect_uri' => 'http://aegir.dev/hosting/project/access',
+//     'scope' => 'repo',
+//     'state' => GITHUB_APP_CLIENT_ID,
+//   );
+
+
+//   $auth_url = $client->getAuthorizationUrl(NULL, array('params' => $params));
+
+//   //drupal_goto($auth_url);
+//   return("<a href=\"$auth_url\">$auth_url</a>");
+// }
+
+// function hosting_project_access(){
+//    $consumer = DrupalOAuthConsumer::load(GITHUB_APP_CLIENT_ID, FALSE);
+//   $request_token = DrupalOAuthToken::loadByKey($_GET['code'], $consumer, OAUTH_COMMON_TOKEN_TYPE_REQUEST);
+
+//   $client = new DrupalOAuthClient($consumer, $request_token);
+
+//   $params = array(
+//     'client_id' => GITHUB_APP_CLIENT_ID,
+//     'client_secret' => GITHUB_APP_CLIENT_SECRET,
+//     'code' => $_GET['code'],
+//     'state' => GITHUB_APP_CLIENT_ID
+//   );
+
+
+//   $verifier = isset($_GET['oauth_verifier']) ? $_GET['oauth_verifier'] : NULL;
+//   $access_token = $client->getAccessToken(NULL, array('params' => $params));
+// die("got here");
+
+//   $request_token->delete();
+
+//   $sig_method = DrupalOAuthClient::signatureMethod();
+//   $auth = new HttpClientOAuth($consumer, $access_token, $sig_method, TRUE, TRUE);
+//   $formatter = new HttpClientBaseFormatter(HttpClientBaseFormatter::FORMAT_JSON);
+//   $client = new HttpClient($auth, $formatter);
+//   $result = $client->get('/user/repos');
+//   print '<pre>';
+//   var_dump($result);
+//   print '</pre>'; die;
+
+// }

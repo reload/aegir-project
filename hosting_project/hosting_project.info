@@ -1,0 +1,6 @@
+name = Hosting project
+description = Git-based projects
+package = Hosting
+dependencies[] = hosting
+dependencies[] = oauth_common
+core = 6.x

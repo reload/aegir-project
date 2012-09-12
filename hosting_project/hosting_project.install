@@ -1,0 +1,106 @@
+<?php
+/**
+ * @file
+ *   Install, update and uninstall for Devshop Projects
+ */
+
+/**
+ * Implementation of hook_schema().
+ */
+function hosting_project_schema() {
+ $schema['hosting_project'] = array(
+    'fields' => array(
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Project node ID.',
+      ),
+      'makefile_url' => array(
+        'type' => 'text',
+        'size' => 'big',
+        'not null' => TRUE,
+        'description' => 'URL to the makefile.',
+      ),
+      'project_type' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+        'default' => 'github',
+        'description' => 'Type of project, defaults to github.',
+      ),
+      'install_profile' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'Default install profile.',
+      ),
+      'base_domain' => array(
+        'type' => 'varchar',
+        'length' => 255,
+        'not null' => TRUE,
+        'description' => 'Deployments will be postfixed this domain',
+      ),
+    ),
+    'primary key' => array('nid'),
+  );
+
+ $schema['hosting_project_deployment'] = array(
+    'fields' => array(
+      'project_nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Project node ID.',
+      ),
+      'deployment_id' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'ID of the deployment',
+      ),
+      'name' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+        'description' => 'Name of the site.',
+      ),
+      'site_nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => 0,
+        'description' => 'ID of the site currently deployed',
+      ),
+      'revision' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+        'default' => 'master',
+        'description' => 'Git revspec.',
+      ),
+    ),
+    'primary key' => array('deployment_id'),
+  );
+
+  return $schema;
+}
+
+/**
+ * Implementation of hook_install().
+ */
+function hosting_project_install() {
+  // Create tables.
+  drupal_install_schema('hosting_project');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function hosting_project_uninstall() {
+  // Delete tables.
+  drupal_uninstall_schema('hosting_project');
+}
