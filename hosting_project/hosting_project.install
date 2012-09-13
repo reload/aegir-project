@@ -10,6 +10,13 @@
 function hosting_project_schema() {
  $schema['hosting_project'] = array(
     'fields' => array(
+      'vid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Node revision ID.',
+      ),
       'nid' => array(
         'type' => 'int',
         'unsigned' => TRUE,
@@ -42,8 +49,18 @@ function hosting_project_schema() {
         'not null' => TRUE,
         'description' => 'Deployments will be postfixed this domain',
       ),
+      'web_server' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'db_server' => array(
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
     ),
-    'primary key' => array('nid'),
+    'primary key' => array('vid'),
   );
 
  $schema['hosting_project_deployment'] = array(
