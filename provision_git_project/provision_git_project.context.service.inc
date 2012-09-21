@@ -14,7 +14,6 @@ function provision_git_platform_provision_services() {
   );
 }
 
-
 /**
  * The service base class.
  * Hook into provision and make sure all project-related properties are saved
@@ -23,20 +22,18 @@ class provisionService_git_project extends provisionService {
   public $service = 'git_project';
 
   /**
-   * Add the subfolder_path property to the site context.
+   * Signal that the git_project_deployment property should be saved when
+   * saving platform aliases
    */
   static function subscribe_platform($context) {
-  	drush_log("platform subscription", 'ok');
-    $context->setProperty('project');
-    $context->setProperty('deployment_revspec');
+    $context->setProperty('git_project_deployment');
   }
  /**
-   * Add the subfolder_path property to the site context.
+   * Signal that the git_project_deployment property should be saved when
+   * saving site aliases
    */
   static function subscribe_site($context) {
-  	drush_log("site subscription", 'ok');
-    $context->setProperty('project');
-    $context->setProperty('deployment_name');
+    $context->setProperty('git_project_deployment');
   }
 }
 
@@ -76,6 +73,10 @@ class provisionContext_git_project extends provisionContext {
     $this->setProperty('project_type', 'github');
     $this->setProperty('db_server', '@server_localhost');
     $this->setProperty('web_server', '@server_master');
+
+    // specify that the following are subcontexts
+    $this->is_oid('db_server');
+    $this->is_oid('web_server');
   }
 }
 
@@ -94,5 +95,9 @@ class provisionContext_git_project_deployment extends provisionContext {
     $this->setProperty('status', 'active');
     $this->setProperty('platform', '');
     $this->setProperty('site', '');
+
+   // specify that the following are subcontexts
+    $this->is_oid('platform');
+    $this->is_oid('site');
    }
 }
