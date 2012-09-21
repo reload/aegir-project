@@ -7,8 +7,8 @@
 /**
  * Implementation of hook_schema().
  */
-function hosting_project_schema() {
- $schema['hosting_project'] = array(
+function hosting_git_project_schema() {
+ $schema['hosting_git_project'] = array(
     'fields' => array(
       'vid' => array(
         'type' => 'int',
@@ -59,11 +59,18 @@ function hosting_project_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
+      'status' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+        'default' => 'enabled',
+        'description' => 'Project status',
+      ),
     ),
     'primary key' => array('vid'),
   );
 
- $schema['hosting_project_deployment'] = array(
+ $schema['hosting_git_project_deployment'] = array(
     'fields' => array(
       'project_nid' => array(
         'type' => 'int',
@@ -92,12 +99,26 @@ function hosting_project_schema() {
         'default' => 0,
         'description' => 'ID of the site currently deployed',
       ),
+      'platform_nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'default' => 0,
+        'description' => 'ID of the platform currently deployed',
+      ),
       'revision' => array(
         'type' => 'varchar',
         'not null' => TRUE,
         'length' => 255,
         'default' => 'master',
         'description' => 'Git revspec.',
+      ),
+      'deploy_status' => array(
+        'type' => 'varchar',
+        'not null' => TRUE,
+        'length' => 255,
+        'default' => 'enabled',
+        'description' => 'Deployment status',
       ),
     ),
     'primary key' => array('deployment_id'),
@@ -109,15 +130,15 @@ function hosting_project_schema() {
 /**
  * Implementation of hook_install().
  */
-function hosting_project_install() {
+function hosting_git_project_install() {
   // Create tables.
-  drupal_install_schema('hosting_project');
+  drupal_install_schema('hosting_git_project');
 }
 
 /**
  * Implementation of hook_uninstall().
  */
-function hosting_project_uninstall() {
+function hosting_git_project_uninstall() {
   // Delete tables.
-  drupal_uninstall_schema('hosting_project');
+  drupal_uninstall_schema('hosting_git_project');
 }

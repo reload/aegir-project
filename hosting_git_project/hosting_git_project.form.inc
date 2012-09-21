@@ -3,7 +3,7 @@
 /**
  * Implementation of hook_form().
  */
-function hosting_project_form(&$node) {
+function hosting_git_project_form(&$node) {
   $type = node_get_types('type', $node);
   $form['title'] = array(
     '#type' => 'textfield',
@@ -81,7 +81,7 @@ function hosting_project_form(&$node) {
 /**
  * Validates for platform create
  */
-function hosting_project_platform_create_form_validate(&$form, &$form_state){
+function hosting_git_project_platform_create_form_validate(&$form, &$form_state){
   if (empty($form_state['values']['platform_name'])){
     form_set_error('install_profile', t('You must include a platform name'));
   }
@@ -90,9 +90,9 @@ function hosting_project_platform_create_form_validate(&$form, &$form_state){
 /**
  * Implements hook_form_alter().
  */
-function hosting_project_form_alter(&$form, &$form_state, $form_id){
+function hosting_git_project_form_alter(&$form, &$form_state, $form_id){
   // Removing unneccesary fieldgroups
-  if ($form_id == 'project_node_form'){
+  if ($form_id == 'git_project_node_form'){
       $form['options']['#access'] = FALSE;
       $form['menu']['#access'] = FALSE;
       $form['revision_information']['#access'] = FALSE;
@@ -103,7 +103,6 @@ function hosting_project_form_alter(&$form, &$form_state, $form_id){
       $form['buttons']['preview']['#access'] = FALSE;
   }
 }
-
 
 /**
  * Dialog for deployment
@@ -123,5 +122,3 @@ function hosting_task_deploy_form($node) {
   $form['#node'] = $node;
   return $form;
 }
-
-

@@ -3,12 +3,12 @@
 /**
  * Implementation of hook_node_info().
  */
-function hosting_project_node_info() {
+function hosting_git_project_node_info() {
   #configuration
-  $types["project"] =  array(
-    "type" => 'project',
-    "name" => 'Project',
-    "module" => 'hosting_project',
+  $types["git_project"] =  array(
+    "type" => 'git_project',
+    "name" => 'Git Project',
+    "module" => 'hosting_git_project',
     "has_title" => TRUE,
     "title_label" => t('Project Name'),
     "description" => "A git / stub makefile backed project",
@@ -18,13 +18,14 @@ function hosting_project_node_info() {
 
 /**
  * Implementation of hook_load().
- *
+ * hosting_name is used by hosting as the name to add after @ when creating
+ * the aliasname for the context
  * @param node
  *    Node object
  */
-function hosting_project_load($node) {
+function hosting_git_project_load($node) {
   $additions = db_fetch_object(
-    db_query('SELECT makefile_url, project_type, install_profile, base_domain, db_server, web_server FROM {hosting_project} WHERE vid = %d', $node->vid)
+    db_query('SELECT makefile_url, project_type, install_profile, base_domain, db_server, web_server, c.name as hosting_name FROM {hosting_git_project} JOIN {hosting_context} c on c.nid = %d WHERE vid = %d', array($node->nid, $node->vid))
   );
 
   return $additions;
@@ -33,16 +34,26 @@ function hosting_project_load($node) {
 /**
  * Implementation of hook_insert().
  */
-function hosting_project_insert($node) {
-  db_query("INSERT INTO {hosting_project} (vid, nid, makefile_url, project_type, install_profile, base_domain, db_server, web_server) VALUES (%d, %d, '%s', '%s', '%s', '%s', %d, %d)",
+function hosting_git_project_insert($node) {
+  db_query("INSERT INTO {hosting_git_project} (vid, nid, makefile_url, project_type, install_profile, base_domain, db_server, web_server) VALUES (%d, %d, '%s', '%s', '%s', '%s', %d, %d)",
     $node->vid, $node->nid, $node->makefile_url, $node->project_type, $node->install_profile, $node->base_domain, $node->db_server, $node->web_server);
+
+  if (!$node->old_vid) {
+    dd("registering context " . preg_replace("/[!\W]/", "", $node->title));
+    hosting_context_register($node->nid, 'git_project_' . preg_replace("/[!\W]/", "", $node->title));
+  }
+
+  if (!isset($node->no_verify)) {
+    dd("verifying");
+    hosting_add_task($node->nid, 'verify');
+  }
 }
 
 
 /**
  * Implementation of hook_view().
  */
-function hosting_project_view($node, $teaser = FALSE, $page = FALSE) {
+function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
   modalframe_parent_js();
 
   $node->content['info'] = array(
@@ -66,7 +77,7 @@ function hosting_project_view($node, $teaser = FALSE, $page = FALSE) {
 
   $node->content['info']['db_server'] = array(
     '#type' => 'item',
-    '#title' => t('DB server'),
+      '#title' => t('DB server'),
     '#value' => _hosting_node_link($node->db_server),
     '#weight' => -7
   );
