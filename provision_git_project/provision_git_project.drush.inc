@@ -144,13 +144,22 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   // the file.
   $fetch_url = _git_project_prepare_github_raw_url($project->makefile_url, $rev);
 
+  if (!$fetch_url) {
+    return drush_set_error("MAKEFILE", dt('Could not fetch makefile from !url with revspec !rev',
+                                           array(
+                                             '!url' => $project->makefile_url,
+                                             '!rev' => $rev,
+                                           )
+                                          ));
+  }
+
   // Download makefile.
   // TODO, split up into functions.
   // TODO, make up clever platform name, based on timestamps and/or revisions.
-  $platform_name = _git_project_get_platform_alias($deployment);
+  $platform_alias = _git_project_get_platform_alias($deployment);
 
   // Construct the platform destination path.
-  $platform_destination = GIT_PROJECT_PLATFORM_ROOT . str_replace('@', '', $platform_name);
+  $platform_destination = GIT_PROJECT_PLATFORM_ROOT . str_replace('@', '', $platform_alias);
 
   // TOOD: come up with an alternate name.
   if (file_exists($platform_destination)) {
@@ -176,7 +185,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
   // Before we start actually doing anything, confirm with the user.
   $message  = "This command will\n";
-  $message .= "- Create a new platform named \"$platform_name\" using the {$choosen_revtype} \"{$rev}\"\n";
+  $message .= "- Create a new platform named \"$platform_alias\" using the {$choosen_revtype} \"{$rev}\"\n";
 
   if (!$deployment->site) {
     $message .= dt('- Install a new site using the installation profile "!profile" on the platform with the alias !sitename',
@@ -205,23 +214,22 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     return FALSE;
   }
 
-  drush_log(dt('Using @makefile to build platform', array('@platform' => $platform_name, '@makefile' => $makefile_path)), 'ok');
+  drush_log(dt('Using @makefile to build platform', array('@platform' => $platform_alias, '@makefile' => $makefile_path)), 'ok');
 
+  drush_backend_invoke_args('make', array($makefile_path, $platform_destination));
   if (drush_get_error()) {
     return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
   }
 
-  drush_log(dt('Platform "!platform" prepared, installing it into Aegir', array('!platform' => $platform_name), 'ok'));
+  drush_log(dt('Platform "!platform" prepared, installing it into Aegir', array('!platform' => $platform_alias), 'ok'));
 
   // Create the drush alias file for the platform.
-  $args = array($platform_name);
+  $args = array($platform_alias);
   $options = array(
     'root' => $platform_destination,
     'context_type' => 'platform',
     'web_server' => $project->web_server->name,
     'git_project_deployment' => $deployment->name);
-
-  $options['root'] = '/var/aegir/platforms/git_project_deployment_siteprocessor_dev_1348229207';
 
   drush_backend_invoke_args('provision-save', $args, $options);
   if (drush_get_error()) {
@@ -252,7 +260,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     drush_log(dt('Installing the site !site onto platform !platform on webserver !webserver using database !dbserver',
                array(
                  '!site'      => $site_uri,
-                 '!platform'  => $platform_name,
+                 '!platform'  => $platform_alias,
                  '!webserver' => $project->web_server,
                  '!dbserver'  => $project->db_server,
                )
@@ -263,11 +271,12 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     if (!_git_project_save_alias($site_alias,
                                  $site_uri,
                                  $platform_alias,
-                                 $webserver,
-                                 $dbserver,
-                                 $profile)) {
+                                 $project->web_server->name,
+                                 $project->db_server->name,
+                                 $project->profile)) {
       return FALSE;
     }
+
     drush_log(dt('Alias for site !site saved', array('!site' => $site_uri)), 'ok');
 
     drush_log(dt('Installing site !site', array('!site' => $site_uri)), 'ok');
@@ -279,7 +288,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     }
     drush_log(dt('Site installation successful'), 'ok');
 
-    drush_log(dt('Verifying site to bring Hostmaster frontend in sync'));
+    drush_log(dt('Verifying site to bring Hostmaster frontend in sync', 'ok'));
 
     // Queue up a verification of the platform to discover the new site.
     provision_backend_invoke('hostmaster', 'hosting-task', array($platform_alias, 'verify'));
@@ -382,7 +391,7 @@ function drush_provision_git_project_create_validate($project_name = FALSE,
   if (!$makefile_content) {
     return drush_set_error('MISSING_MAKEFILE', 'Unable to fetch makefile from ' . $makefile_url);
   }
-  if (!preg_match('#projects\[' . $install_profile . ' \]\[type\]\s*=\s*(\'|")?profile(\'|")?#', $makefile_content)) {
+  if (!preg_match('/projects\[' . $install_profile . ']\[type]\s*=\s*(\'|")?profile(\'|")?/', $makefile_content)) {
     return drush_set_error('INVALID_MAKEFILE',
       'Unable to validate makefile, it did not contain the install-profile "' . $install_profile . '" ');
   }
@@ -479,7 +488,7 @@ function _git_project_print_array($array, $title = FALSE) {
   // Add key/values with proper spacing.
   foreach ($array as $key => $value) {
     $out_string .= $key . str_repeat(' ', $max_len - strlen($key))
-                   . ' : ' . (strlen($value) > 0 ? $value : '<empty>') . "\n";
+                   . ' : ' . (@strlen($value) > 0 ? $value : '<empty>') . "\n";
   }
 
   return ($out_string);
@@ -492,7 +501,7 @@ function _git_project_print_array($array, $title = FALSE) {
  * Optionallity including username/token query params and injects revision
  * information.
  */
-function _git_project_prepare_github_raw_url($url, $revision = 'master') {
+function _git_project_prepare_github_raw_url($url, $revspec = 'master') {
   $parsed_url = parse_url($url);
   $params = array();
   if (isset($parsed_url['query'])) {
@@ -506,8 +515,9 @@ function _git_project_prepare_github_raw_url($url, $revision = 'master') {
   list($null, $gh_user, $repo, $null, $path) = $matches;
 
   // Build up the url again.
-  $fetch_url = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/' . $gh_user . '/' . $repo . '/' . $rev . '/' . $path;
+  $fetch_url = $parsed_url['scheme'] . '://' . $parsed_url['host'] . '/' . $gh_user . '/' . $repo . '/' . $revspec . '/' . $path;
   $fetch_url .= '?' . $parsed_url['query'];
+  return $fetch_url;
 }
 
 /**
@@ -593,7 +603,8 @@ function drush_provision_git_platform($project_name, $platform_name, $host, $rep
 
   drush_log(dt('Building the platform @platform', array('@platform' => $platform_name)), 'ok');
 
-  // If a makefile is specified, do a temp checkout, get the file, modify it and feed it to drush make.
+  // If a makefile is specified, do a temp checkout, get the file, modify it and
+  // feed it to drush make.
   // TODO some caching should allow us to save a checkout.
   if (!($makefile = drush_get_option('makefile'))) {
     // Plain checkout.
@@ -602,7 +613,7 @@ function drush_provision_git_platform($project_name, $platform_name, $host, $rep
     }
 
   }
-  else{
+  else {
     // Get repo into temp location.
     $temp_repo = drush_tempdir();
     if (!drush_make_download_git($project_name, $repo_info, $temp_repo)) {
