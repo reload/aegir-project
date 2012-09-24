@@ -108,6 +108,7 @@ PROVISION COMMANDS
     drush git-project-create \
             "Scleroseforeningen" \
             "scl.reload.dk" \
+            "sclerosis" \
             "https://raw.github.com/reload/Scleroseforeningen/master/build_sclerosis.make?login=danquah&token=34b385e88e61e6492e8238b32b0fa8c1"
   - stores a git alias
 
