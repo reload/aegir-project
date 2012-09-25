@@ -1,16 +1,20 @@
 <?php
-//include_once(dirname(__FILE__) . '/../provision/provision.service.inc');
+/**
+ * @file
+ * Contexts used in Git Project.
+ */
 
 /**
  * Expose the service type this extension defines to provision.
  *
- * @return
- *   An array with the service type the key, and the default implementation the value.
+ * @return array
+ *   An array with the service type the key, and the default implementation the
+ *   value.
  */
-function provision_git_platform_provision_services() {
+function provision_git_project_provision_services() {
   return array(
-      'git_project'            => NULL,
-      'git_project_deployment' => NULL,
+    'git_project'            => NULL,
+    'git_project_deployment' => NULL,
   );
 }
 
@@ -22,18 +26,18 @@ class provisionService_git_project extends provisionService {
   public $service = 'git_project';
 
   /**
-   * Signal that the git_project_deployment property should be saved when
-   * saving platform aliases
+   * Git_project_deployment property should be saved when saving platform aliases
    */
   static function subscribe_platform($context) {
     $context->setProperty('git_project_deployment');
+    $context->is_oid('git_project_deployment');
   }
  /**
-   * Signal that the git_project_deployment property should be saved when
-   * saving site aliases
+   * Git_project_deployment property should be saved when saving site aliases
    */
   static function subscribe_site($context) {
     $context->setProperty('git_project_deployment');
+    $context->is_oid('git_project_deployment');
   }
 }
 

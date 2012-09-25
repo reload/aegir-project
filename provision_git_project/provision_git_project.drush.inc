@@ -64,6 +64,9 @@ function provision_git_project_drush_command() {
       'branch' => array(
         'description' => 'branch (head) to use for deployment, the deployment will "track" this branch. Subsequent invokcations of git-platform-deploy will not require you to reference this branch if all you want to do is to migrate to head of the branch',
       ),
+      'override-platform' => array(
+        'description' => 'Full path to a platform that should be copied instead of building a new from the deployments makefile',
+      ),
     ),
     'bootstrap' => DRUSH_BOOTSTRAP_DRUSH,
   );
@@ -75,12 +78,12 @@ function provision_git_project_drush_command() {
 /**
  * Verify that both project and deployment exists as aliases.
  */
-function drush_provision_git_project_deploy_validate($project_alias = FALSE, $deployment_name = FALSE) {
+function drush_provision_git_project_deploy_validate($project_alias = FALSE, $deployment_shot_name = FALSE) {
   if ($project_alias === FALSE) {
     return drush_set_error('MISSING_ARGUMENT', dt('Missing: project'));
   }
 
-  if ($deployment_name === FALSE) {
+  if ($deployment_shot_name === FALSE) {
     return drush_set_error('MISSING_ARGUMENT', dt('Missing: deployment'));
   }
 
@@ -92,11 +95,31 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
   }
 
   // Attempt to load the project.
-  $deployment = d(_git_project_get_deployment_alias($project_alias, $project->project_name));
+  $deployment = d(_git_project_get_deployment_alias($deployment_shot_name, $project), FALSE, FALSE);
 
   if (!$deployment) {
     // d() has already printed an error messeage, so just return false.
     return FALSE;
+  }
+
+  if (!$deployment->site) {
+    // If the deployment dones not already have a reference to the site, make
+    // sure the site does not already exist.
+    $site_alias = _git_project_get_site_alias($deployment);
+
+    $existing_site = @d($site_alias);
+    if ($existing_site) {
+      return drush_set_error('SITE_EXISTS', dt('The site !site_alias already exist!',
+        array('!site_alias' => $site_alias)));
+    }
+  }
+
+  $override_platform = drush_get_option('override-platform', FALSE);
+  if ($override_platform !== FALSE && !is_readable($override_platform)) {
+    return drush_set_error('UNREADABLE',
+      dt('Could not gain read-access to the override platform !platform',
+        array('!platform' => $override_platform)
+      ));
   }
 
   // TODO halt if the user specifeid more than one rev spec.
@@ -119,6 +142,9 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   $tag = $deployment_branch = drush_get_option('tag', FALSE);
   $sha = $deployment_branch = drush_get_option('sha', FALSE);
   $branch = $deployment_branch = drush_get_option('branch', FALSE);
+
+  // Overrides.
+  $override_platform = drush_get_option('override-platform', FALSE);
 
   // Determine the revision info to use.
   if ($tag !== FALSE) {
@@ -163,7 +189,13 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
   // Before we start actually doing anything, confirm with the user.
   $message  = "This command will\n";
-  $message .= "- Create a new platform named \"$platform_alias\" using the {$choosen_revtype} \"{$rev}\"\n";
+  if ($override_platform === FALSE) {
+    $message .= "- Create a new platform named \"$platform_alias\" using the {$choosen_revtype} \"{$rev}\"\n";
+  }
+  else {
+    $message .= "- Create a new platform named \"$platform_alias\" by copying {$override_platform}\n";
+  }
+
 
   if (!$deployment->site) {
     $message .= dt('- Install a new site using the installation profile "!profile" on the platform with the alias !sitename',
@@ -180,77 +212,74 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   if (!drush_confirm($message)) {
     return;
   }
+  if ($override_platform === FALSE) {
+    // Download and update the makefile.
+    $makefile_content = file_get_contents($fetch_url);
+    $makefile_path = tempnam(sys_get_temp_dir(), 'git_project_make');
+    file_put_contents($makefile_path, $makefile_content);
 
-  // Download and update the makefile.
-  $makefile_content = file_get_contents($fetch_url);
-  $makefile_path = tempnam(sys_get_temp_dir(), 'git_project_make');
-  file_put_contents($makefile_path, $makefile_content);
+    // Prepare revision argument for the build.
+    if ($sha !== FALSE) {
+      $repo_info['revision'] = $sha;
+    }
+    elseif ($branch !== FALSE) {
+      $repo_info['branch'] = $branch;
+    }
+    elseif ($tag !== FALSE) {
+      $repo_info['tag'] = $tag;
+    }
+    else {
+      // Default to deployment branch specified in master if the user did not
+      // override.
+      $repo_info['branch'] = $deployment->deployment_branch;
+    }
 
-  // Prepare revision argument for the build.
-  if ($sha !== FALSE) {
-    $repo_info['revision'] = $sha;
-  }
-  elseif ($branch !== FALSE) {
-    $repo_info['branch'] = $branch;
-  }
-  elseif ($tag !== FALSE) {
-    $repo_info['tag'] = $tag;
+    // Rewrite makefile using information about the installation profile and the
+    // repository.
+    if (!_git_project_rewrite_makefile($makefile_path, $project->profile, $repo_info)) {
+      return FALSE;
+    }
+
+    drush_log(dt('Building platform !platform using Drush Make', array('!platform' => $platform_alias)), 'ok');
+    drush_log(dt('Using makefile !makefile', array('!makefile' => $makefile_path)), 'notice');
+
+    drush_backend_invoke_args('make', array($makefile_path, $platform_destination));
+    if (drush_get_error()) {
+      return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
+    }
   }
   else {
-    // Default to deployment branch specified in master if the user did not
-    // override.
-    $repo_info['branch'] = $deployment->deployment_branch;
+    drush_copy_dir($override_platform, $platform_destination);
+    drush_log(dt('Override platform copied from !platform_path to !platform_destination',
+                  array(
+                    '!platform_path'        => $override_platform,
+                    '!platform_destination' => $platform_destination,
+                  )), 'ok');
   }
-
-  // Rewrite makefile using information about the installation profile and the
-  // repository.
-  if (!_git_project_rewrite_makefile($makefile_path, $project->profile, $repo_info)) {
-    return FALSE;
-  }
-
-  drush_log(dt('Building platform !platform using Drush Make', array('!platform' => $platform_alias)), 'ok');
-  drush_log(dt('Using makefile !makefile', array('!makefile' => $makefile_path)), 'notice');
-
-  // drush_backend_invoke_args('make', array($makefile_path, $platform_destination));
-  // if (drush_get_error()) {
-  //   return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
-  // }
-  `cp -vr /tmp/platform_scleroseforeningen_nightly_1348488016 $platform_destination`;
-  drush_log(dt('Platform "!platform" prepared, creating alias', array('!platform' => $platform_alias), 'ok'));
+  drush_log(dt('Platform "!platform" prepared, creating alias', array('!platform' => $platform_alias)), 'ok');
 
   // Create the drush alias file for the platform.
+  $args = array($platform_alias);
+  drush_backend_invoke_args('provision-save', $args);
+  if (drush_get_error()) {
+    return drush_set_error("PROVISION_SAVE_FAILED", dt("Could not verify the platform !platform",
+      array('!platform' => $platform_alias)));
+  }
+  drush_log(dt('Platform alias created, verifying platform'), 'ok');
+
+  // Have provision verify the platform, this will also link the platform to
+  // the deployment via drush_hook_post_provision_verify()
   $args = array($platform_alias);
   $options = array(
     'root' => $platform_destination,
     'context_type' => 'platform',
     'web_server' => $project->web_server->name,
     'git_project_deployment' => $deployment->name);
-  drush_backend_invoke_args('provision-save', $args, $options);
+  drush_backend_invoke_args('provision-verify', $args, $options);
   if (drush_get_error()) {
     return drush_set_error("PROVISION_SAVE_FAILED", "Could not create drush-alias for platform");
   }
-  drush_log(dt('Platform alias created'), 'ok');
-
-  // Save context.
-  $deployment->platform = $platform_alias;
-  $deployment->write_alias();
-  if (!drush_get_error()) {
-    drush_log(dt("Updated !deployment_name with a reference to !platform_name",
-      array(
-        '!deployment_name' => $deployment->name,
-        '!platform_name' => $platform_alias)
-      ), 'ok');
-  }
-  else {
-    return drush_set_error("CONTEXT_WRITE", dt('Could not updated !deployment_name with a reference to !platform_name',
-      array(
-        '!deployment_name' => $deployment->name,
-        '!platform_name' => $platform_alias)));
-  }
-
-
-
-
+  drush_log(dt('Platform alias created and verfied'), 'ok');
 
   // Inform the hostmaster frontend about the new platform.
   drush_log('Importing platform into hostmaster', 'ok');
@@ -264,7 +293,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   if (drush_get_error()) {
     return drush_set_error("HOSTING_IMPORT_FAILED", "Could get aegir to process its queue");
   }
-  drush_log(dt('Import-task queued in Hostmaster', 'ok'));
+  drush_log(dt('Import-task queued in Hostmaster'), 'ok');
 
 
   // Determine whether to install a new site, or migrate an existing.
@@ -277,19 +306,19 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
                array(
                  '!site'      => $site_uri,
                  '!platform'  => $platform_alias,
-                 '!webserver' => $project->web_server,
-                 '!dbserver'  => $project->db_server,
+                 '!webserver' => $project->web_server->name,
+                 '!dbserver'  => $project->db_server->name,
                )
-              )
+              ), 'ok'
     );
 
     // Store the alias.
     if (!_git_project_save_alias($site_alias,
                                  $site_uri,
                                  $platform_alias,
-                                 $project->web_server->name,
-                                 $project->db_server->name,
-                                 $project->profile)) {
+                                 $project,
+                                 $deployment
+                                 )) {
       return FALSE;
     }
 
@@ -304,24 +333,6 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     }
     drush_log(dt('Site installation successful'), 'ok');
 
-    // Update deployment with site reference.
-    $deployment->site = $site_alias;
-    $deployment->write_alias();
-    if (!drush_get_error()) {
-      drush_log(dt("Updated !deployment_name with a reference to !site_name",
-        array(
-          '!deployment_name' => $deployment->name,
-          '!site_name' => $site_alias)
-        ), 'ok');
-    }
-    else {
-      return drush_set_error("CONTEXT_WRITE", dt('Could not updated !deployment_name with a reference to !site_name',
-        array(
-          '!deployment_name' => $deployment->name,
-          '!site_name' => $site_alias)));
-    }
-
-
     drush_log(dt('Verifying site to bring Hostmaster frontend in sync'), 'ok');
     // Queue up a verification of the platform to discover the new site.
     provision_backend_invoke('hostmaster', 'hosting-task', array($platform_alias, 'verify'));
@@ -331,6 +342,31 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
     drush_log(dt('Verification successful'), 'ok');
     // Done.
+  }
+  else {
+    // Site exists, migrate it onto the new platform.
+    drush_log(dt('Migrating !site onto the new platform !platform',
+               array(
+                 '!site'      => $site_uri,
+                 '!platform'  => $platform_alias,
+               )
+              )
+    );
+
+    provision_backend_invoke($site_alias, 'provision-migrate', array($platform_alias));
+    if (drush_get_error()) {
+      return drush_set_error("MIGRATION_FAILED", "Could not migrate " .
+        $site_uri . " onto " . $platform_alias);
+    }
+
+    // Refresh frontend.
+    drush_log(dt('Informing Hostmaster of the migration'), 'ok');
+    provision_backend_invoke('hostmaster', 'hosting-import', array($site_alias));
+    if (drush_get_error()) {
+      return drush_set_error("HOSTING_IMPORT_FAILED", "Could not inform hostmaster of site migration");
+    }
+
+    drush_log(dt('Site has been verified and migrated'), 'ok');
   }
 }
 
@@ -527,6 +563,135 @@ function _git_project_print_array($array, $title = FALSE) {
   return ($out_string);
 }
 
+
+/**
+ * Implements hook_post_provision_verify().
+ *
+ * Bring the git project deployment context in sync when platforms and sites
+ * are verified. Platforms are verified when they are installed, sites are
+ * verified when the user wants to bring it back into sync.
+ */
+function drush_provision_git_project_post_provision_verify() {
+  // Spot the deployment property.
+  if (d()->git_project_deployment) {
+    $deployment = d()->git_project_deployment;
+
+    if (d()->type == 'platform' && $deployment->platform->name != d()->name) {
+      drush_log("Git Project: linking this platform with the deployment " . $deployment->name, 'ok');
+      $deployment->platform = d()->name;
+    }
+    elseif (d()->type == 'site' && $deployment->site->name != d()->name) {
+      drush_log("Git Project: linking this site with the deployment " . $deployment->name, 'ok');
+      $deployment->site = d()->name;
+    }
+    else {
+      // Unknown context, do nothing.
+      return TRUE;
+    }
+
+    // Update the deployment drush-alias.
+    $deployment->write_alias();
+    if (drush_get_error()) {
+      return drush_set_error("ALIAS_SAVE_FAILED",
+        dt("Could not update the alias for deployment !deployment",
+          array('!deployment' => $deployment->name))
+      );
+    }
+  }
+}
+
+/**
+ * Implements hook_post_provision_migrate().
+ */
+function drush_provision_git_project_post_provision_migrate() {
+  return drush_provision_git_project_post_provision_install();
+}
+
+/**
+ * Implements hook_post_provision_install().
+ *
+ * Bring the git project deployment context in sync when sites are installed.
+ * Platforms are only verified, not installed, these are handled in
+ * hook_post_provision_verify
+ */
+function drush_provision_git_project_post_provision_install() {
+  // Spot the deployment property.
+  if (d()->git_project_deployment) {
+    $deployment = d()->git_project_deployment;
+
+    // Take action if a site is being installed.
+    if (d()->type == 'site') {
+      if (d()->platform->git_project_deployment) {
+        // Site is being installed on / migrated to a git project platform.
+        drush_log("Git Project: linking this site to the deployment " . $deployment->name, 'ok');
+        $deployment->site = d()->name;
+
+        if (d()->git_project_deployment->platform->name != d()->platform->name) {
+          // Site is being migrated to a platform that is out of sync.
+          drush_log("Git Project: updating platform reference as well");
+          $deployment->platform = d()->platform->name;
+        }
+      }
+      else {
+        drush_log("Site is being migrated to a platform that does not using Git Project, breaking all relations", 'ok');
+        // Site is being installed on / migrated to a platform that is not a
+        // Git Project platform, break relation to the project.
+        d()->git_project_deployment->site = '';
+        d()->git_project_deployment = '';
+        d()->write_alias();
+      }
+
+    }
+    else {
+      // Unknown context, do nothing.
+      return TRUE;
+    }
+
+    // Update the deployment drush-alias.
+    $deployment->write_alias();
+    if (drush_get_error()) {
+      return drush_set_error("ALIAS_SAVE_FAILED",
+        dt("Could not save alias for deployment !deployment",
+          array('!deployment' => $deployment->name))
+      );
+    }
+  }
+}
+
+/**
+ * Implements hook_post_provision_delete().
+ */
+function drush_provision_git_project_post_provision_delete() {
+  // Spot the deployment property.
+  if (d()->git_project_deployment) {
+    $deployment = d()->git_project_deployment;
+
+    // Take action if site or platform.
+    if (d()->type == 'site') {
+      drush_log("Git Project: unlinking this site from the deployment " . $deployment->name, 'ok');
+      $deployment->site = '';
+    }
+    elseif (d()->type == 'platform') {
+      drush_log("Git Project: unlinking this platform from the deployment " . $deployment->name, 'ok');
+      $deployment->platform = '';
+    }
+    else {
+      // Unknown context, do nothing.
+      return TRUE;
+    }
+
+    // Update the deployment drush-alias.
+    $deployment->write_alias();
+    if (drush_get_error()) {
+      return drush_set_error("ALIAS_SAVE_FAILED",
+        dt("Could not save alias for deployment !deployment",
+          array('!deployment' => $deployment->name))
+      );
+    }
+  }
+}
+
+
 // UTILITY FUNCTIONS.
 /**
  * Parses a github raw url.
@@ -570,7 +735,6 @@ function _git_project_get_site_alias($deployment) {
   return _git_project_get_alias($deployment->deployment_name . '.' . $deployment->git_project->domain_basename);
 }
 
-
 /**
  * Returns a rush alias for the project name including @.
  */
@@ -581,8 +745,8 @@ function _git_project_get_project_alias($project_alias) {
 /**
  * Returns drush alias for the deployment name including @.
  */
-function _git_project_get_deployment_alias($deployment_alias, $project) {
-  return _git_project_get_alias($deployment_alias, 'git_project_deployment_' . _git_project_alias_normalize($project->project_name) . '_');
+function _git_project_get_deployment_alias($deployment_short_name, $project) {
+  return _git_project_get_alias($deployment_short_name, 'git_project_deployment_' . _git_project_alias_normalize($project->project_name) . '_');
 }
 
 /**
@@ -599,209 +763,20 @@ function _git_project_alias_normalize($name) {
   return strtolower(preg_replace("/[^\w\.-]/", "", $name));
 }
 
-
-/**
- * Performs a checkout of a project and installs it as a platform.
- *
- * Optionally
- * migrating or installing a new site on it
- *
- * (ref https://github.com/mig5/aegir_cid/blob/master/fabfile.py)
- *
- * TODO:
- *  - switch to using proper aegir d() contexts
- */
-function drush_provision_git_platform($project_name, $platform_name, $host, $repo) {
-  // Get paramteres.
-  $repo_info = array();
-  $repo_info['url'] = $repo;
-
-  $platform_destination = '/vars()/aegir/platforms/' . $platform_name;
-  if (file_exists($platform_destination)) {
-    drush_set_error('PLATFORM_EXISTS', dt('Could not create platform-directory "@dir" as it already exists', array('@dir' => $platform_destination)));
-    return FALSE;
-  }
-
-  if ($revision = drush_get_option('checkout-revision')) {
-    $repo_info['revision'] = $revision;
-  }
-
-  if ($branch = drush_get_option('checkout-branch')) {
-    $repo_info['branch'] = $branch;
-  }
-
-  if ($branch = drush_get_option('checkout-tag')) {
-    $repo_info['tag'] = $branch;
-  }
-
-  drush_log(dt('Building the platform @platform', array('@platform' => $platform_name)), 'ok');
-
-  // If a makefile is specified, do a temp checkout, get the file, modify it and
-  // feed it to drush make.
-  // TODO some caching should allow us to save a checkout.
-  if (!($makefile = drush_get_option('makefile'))) {
-    // Plain checkout.
-    if (!drush_make_download_git($project_name, $repo_info, $platform_destination)) {
-      return FALSE;
-    }
-
-  }
-  else {
-    // Get repo into temp location.
-    $temp_repo = drush_tempdir();
-    if (!drush_make_download_git($project_name, $repo_info, $temp_repo)) {
-      return FALSE;
-    }
-
-    // Find the make-file.
-    $makefile_path = $temp_repo . '/' . $makefile;
-    if (!file_exists($makefile_path)) {
-      return drush_set_error('MAKEFILE_NOT_FOUND', dt('Could not find makefile "@file" in checkout', array('@file' => $makefile)));
-    }
-
-    if (!_git_project_rewrite_makefile($makefile_path, $project_name, $repo_info)) {
-      return FALSE;
-    }
-
-    drush_log(dt('Using @makefile to build platform', array('@platform' => $platform_name, '@makefile' => $makefile)), 'ok');
-
-    provision_backend_invoke('self', 'make', array($makefile_path, $platform_destination));
-
-    if (drush_get_error()) {
-      return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
-    }
-  }
-
-  drush_log(dt('Platform "!platform" prepared, installing it into Aegir', array('!platform' => $platform_name), 'ok'));
-
-  // Platform files are now in place, setup the aegir part.
-  $platform_alias = '@platform_' . $platform_name;
-
-  // Setup server aliases.
-  $webserver = '@' . (drush_get_option('webserver') ? drush_get_option('webserver') : 'server_master');
-  $dbserver = '@' . (drush_get_option('dbserver') ? drush_get_option('dbserver') : 'server_localhost');
-
-  // Create the drush alias file for the platform.
-  $args = array($platform_alias);
-  $options = array(
-    'root' => $platform_destination,
-    'context_type' => 'platform',
-    'web_server' => $webserver,
-    'git_platform' => $repo_info,
-  );
-
-  provision_backend_invoke('self', 'provision-save', $args, $options);
-  if (drush_get_error()) {
-    return drush_set_error("PROVISION_SAVE_FAILED", "Could not create drush-alias for platform");
-  }
-  drush_log(dt('Platform saved'), 'ok');
-
-  // Inform the hostmaster frontend about the new platform.
-  provision_backend_invoke('hostmaster', 'hosting-import', array($platform_alias));
-  if (drush_get_error()) {
-    return drush_set_error("HOSTING_IMPORT_FAILED", "Could not inform hostmaster of new platform");
-  }
-  drush_log(dt('Platform !platform imported into hostmaster', array('!platform' => $platform_alias)), 'ok');
-
-  // Have aegir process its queue.
-  provision_backend_invoke('hostmaster', 'hosting-dispatch');
-  if (drush_get_error()) {
-    return drush_set_error("HOSTING_IMPORT_FAILED", "Could get aegir to process its queue");
-  }
-  drush_log(dt('Aegir queue processed'), 'ok');
-
-  // See if we need to do anything with the platform.
-  if (($postaction = drush_get_option('postaction')) && ($site = drush_get_option('site-hostname'))) {
-
-    $profile = drush_get_option('profile') ? drush_get_option('profile') : 'default';
-    $site_alias = '@' . $site;
-
-    if ($postaction === "install") {
-        // install a new site on the platform
-        drush_log(dt('Installing the site !site onto platform !platform on webserver !webserver using database !dbserver',
-                     array('!site' => $site, '!platform' => $platform_name, '!webserver' => $webserver, '!dbserver' => $dbserver )));
-
-        // store the alias
-        if (!_git_project_save_alias($site_alias, $site, $platform_alias, $webserver, $dbserver, $profile)) {
-          return FALSE;
-        }
-        drush_log(dt('Alias for site !site saved', array('!site' => $site)), 'ok');
-
-        drush_log(dt('Installing site !site', array('!site' => $site)), 'ok');
-        // install the site
-        provision_backend_invoke($site_alias, 'provision-install');
-        if (drush_get_error()) {
-          return drush_set_error("SITE_INSTALL_FAILED", "Could not install the site");
-        }
-        drush_log(dt('Site installation successful'), 'ok');
-
-        drush_log(dt('Verifying site to bring Hostmaster frontend in sync'));
-        // queue up a verification of the platform to discover the new site
-        provision_backend_invoke('hostmaster', 'hosting-task', array($platform_alias, 'verify'));
-        if (drush_get_error()) {
-          return drush_set_error("SITE_VERIFY_FAILED", "Could not get aegir to verify the site");
-        }
-
-        drush_log(dt('Verification successful'), 'ok');
-        // done
-      }
-
-      if ($postaction === "migrate") {
-        drush_log(dt('Migrating the site !site onto platform !platform on webserver !webserver using database !dbserver',
-                     array('!site' => $site, '!platform' => $platform_name, '!webserver' => $webserver, '!dbserver' => $dbserver )), 'ok');
-
-        // migrate an existing site onto the platform
-        $options = array('new_db_server' => $dbserver);
-        provision_backend_invoke($site_alias, 'provision-migrate', array($platform_alias), $options);
-        if (drush_get_error()) {
-          return drush_set_error("MIGRATION_FAILED", "Could not migrate " . $site . " onto " . $platform_alias) ;
-        }
-        drush_log(dt('Created alias for the migrated site'), 'ok');
-
-        // store the alias
-        if (!_git_project_save_alias($site_alias, $site, $platform_alias, $webserver, $dbserver, $profile)) {
-          return FALSE;
-        }
-
-        // refresh frontend
-        drush_log(dt('Refreshing the frontend to reflect the site under the new platform'), 'ok');
-        provision_backend_invoke('hostmaster', 'hosting-import', array($site_alias));
-        if (drush_get_error()) {
-          return drush_set_error("HOSTING_IMPORT_FAILED", "Could not inform hostmaster of site migration");
-        }
-
-        provision_backend_invoke('hostmaster', 'hosting-task', array($platform_alias, 'verify'));
-        if (drush_get_error()) {
-          return drush_set_error("HOSTING_IMPORT_FAILED", "Could not verify migrated site");
-        }
-
-        provision_backend_invoke('hostmaster', 'hosting-import', array($site_alias));
-        if (drush_get_error()) {
-          return drush_set_error("HOSTING_IMPORT_FAILED", "Could not verify migrated site");
-        }
-
-        provision_backend_invoke('hostmaster', 'hosting-task', array($site_alias, 'verify'));
-        if (drush_get_error()) {
-          return drush_set_error("HOSTING_IMPORT_FAILED", "Could not verify migrated site");
-        }
-        drush_log(dt('Site has been verified and migrated'), 'ok');
-      }
-  }
-}
-
 /**
  * Invokes provision-save to store a context into an alias.
  */
-function _git_project_save_alias($site_alias, $site_hostname, $platform_alias, $webserver, $dbserver, $profile) {
+function _git_project_save_alias($site_alias, $site_hostname, $platform_alias, $project, $deployment) {
   $args = array($site_alias);
   $options = array(
-    'context_type' => 'site',
-    'uri'          => $site_hostname,
-    'platform'     => $platform_alias,
-    'server'       => $webserver,
-    'db_server'    => $dbserver,
-    'profile'      => $profile,
-    'client_name'  => 'admin',
+    'context_type'            => 'site',
+    'uri'                     => $site_hostname,
+    'platform'                => $platform_alias,
+    'server'                  => $project->web_server->name,
+    'db_server'               => $project->db_server->name,
+    'profile'                 => $project->profile,
+    'git_project_deployment'  => $deployment->name,
+    'client_name'             => 'admin',
   );
   drush_backend_invoke_args('provision-save', $args, $options);
 
