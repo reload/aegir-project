@@ -1,37 +1,23 @@
-# TODO #
-TODO list for the git project project
+# TODO # #
+- delete projects/deployments
 
-## Provision ##
-### deployment ### ### ### ###
-- ryd op i todo
-- spot migrering
-- migrate
+- check which command to use to invoke backend drush stuff
+- make sure hostmaster imports the git-project fields when platforms/sites are being imported from provision
 
-- install site if this is first invocation
+- test that revision is valid before the user confirms the deployment
 
-- consider whether install profile should always be specified, and how it affects the type parameter
-
-- update makefile-update code
-- parse makefile url
-- write up examples for git-platform-deploy
-- fail git-project-deployment-define if already defined, or support updating an existing deployment definition.
-- 
-### Validation stuff ###
-- fail project-create if makefile is missing or invalid
-- fail project-create if makefile is not a raw url
-- specifiy project type, support whole-site-in-repo deployments
-- hook into provision delete
+- figure out what to do about the type parameter when migration works 
 
 - project list
 - add somethign about making first request to github to get past the "accept key" prompt
-
 - output status when failing along the lines "platform created, no site installed, you should probably delete the platform using the command ...."
-- commit
 
-## Hostmaster ## ##
-
-## Other ##
-
-# Done #
-- deployment define including validation
+## hostmaster ##
+- Add deployment
+- First deployment
+- subsequent deployments
+- delete deployment
+- delete project
+- edit deployment
+- edit project (side effects?)
 
