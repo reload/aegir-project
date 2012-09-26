@@ -107,7 +107,7 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
     // sure the site does not already exist.
     $site_alias = _git_project_get_site_alias($deployment);
 
-    $existing_site = @d($site_alias);
+    $existing_site = provision_sitealias_get_record($site_alias);
     if ($existing_site) {
       return drush_set_error('SITE_EXISTS', dt('The site !site_alias already exist!',
         array('!site_alias' => $site_alias)));
@@ -134,9 +134,9 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
 function drush_provision_git_project_deploy($project_name, $deployment_name) {
   // Generate alias-names and load contexts.
   $project_alias = _git_project_get_project_alias($project_name);
-  $project = d($project_alias);
+  $project = d($project_alias, FALSE, FALSE);
   $deployment_alias = _git_project_get_deployment_alias($deployment_name, $project);
-  $deployment = d($deployment_alias);
+  $deployment = d($deployment_alias, FALSE, FALSE);
 
   // Get revision overrides from (optional) options.
   $tag = $deployment_branch = drush_get_option('tag', FALSE);
@@ -169,7 +169,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
   // Construct the platform destination path, check that it does not already
   // exist.
-  $platform_destination = GIT_PROJECT_PLATFORM_ROOT . str_replace('@', '', $platform_alias);
+  $platform_destination = GIT_PROJECT_PLATFORM_ROOT . str_replace('@platform_', '', $platform_alias);
   if (file_exists($platform_destination)) {
     drush_set_error('PLATFORM_EXISTS', dt('Platform-directory "!dir" already exists', array('!dir' => $platform_destination)));
     return FALSE;
@@ -200,7 +200,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   if (!$deployment->site) {
     $message .= dt('- Install a new site using the installation profile "!profile" on the platform with the alias !sitename',
                   array(
-                    '!profile' => $project->profile,
+                    '!profile' => $project->install_profile,
                     '!sitename' => _git_project_get_site_alias($deployment, $project))
                   ) .  "\n";
   }
@@ -236,7 +236,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
     // Rewrite makefile using information about the installation profile and the
     // repository.
-    if (!_git_project_rewrite_makefile($makefile_path, $project->profile, $repo_info)) {
+    if (!_git_project_rewrite_makefile($makefile_path, $project->install_profile, $repo_info)) {
       return FALSE;
     }
 
@@ -260,24 +260,27 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
 
   // Create the drush alias file for the platform.
   $args = array($platform_alias);
-  drush_backend_invoke_args('provision-save', $args);
+  $options = array(
+    'root'         => $platform_destination,
+    'context_type' => 'platform',
+    'web_server'   => $project->web_server->name,
+    'git_project_deployment' => $deployment->name,
+  );
+
+  drush_backend_invoke_args('provision-save', $args, $options);
   if (drush_get_error()) {
-    return drush_set_error("PROVISION_SAVE_FAILED", dt("Could not verify the platform !platform",
-      array('!platform' => $platform_alias)));
+    return drush_set_error("PROVISION_SAVE_FAILED", "Could not create drush-alias for platform");
   }
   drush_log(dt('Platform alias created, verifying platform'), 'ok');
 
   // Have provision verify the platform, this will also link the platform to
   // the deployment via drush_hook_post_provision_verify()
   $args = array($platform_alias);
-  $options = array(
-    'root' => $platform_destination,
-    'context_type' => 'platform',
-    'web_server' => $project->web_server->name,
-    'git_project_deployment' => $deployment->name);
-  drush_backend_invoke_args('provision-verify', $args, $options);
+
+  drush_backend_invoke_args('provision-verify', $args);
   if (drush_get_error()) {
-    return drush_set_error("PROVISION_SAVE_FAILED", "Could not create drush-alias for platform");
+    return drush_set_error("PROVISION_SAVE_FAILED", dt("Could not verify the platform !platform",
+      array('!platform' => $platform_alias)));
   }
   drush_log(dt('Platform alias created and verfied'), 'ok');
 
@@ -340,7 +343,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
       return drush_set_error("SITE_VERIFY_FAILED", "Could not get aegir to verify the site");
     }
 
-    drush_log(dt('Verification successful'), 'ok');
+    drush_log(dt('Verification completed'), 'ok');
     // Done.
   }
   else {
@@ -410,7 +413,7 @@ function drush_provision_git_project_deployment_define($project_alias, $deployme
     'context_type'      => 'git_project_deployment',
     'deployment_name'   => $deployment_name,
     'deployment_branch' => $deployment_branch,
-    'status'            => 'defined',
+    'deployment_status' => 'defined',
     'git_project'       => $project_alias,
   );
 
@@ -441,6 +444,10 @@ function drush_provision_git_project_create_validate($project_name = FALSE,
   // TODO, implement remaining vaidation.
   if ($project_name === FALSE) {
     return drush_set_error('MISSING_ARGUMENT', 'missing argument: project-name');
+  }
+
+  if (strtolower($project_name) === 'deployment') {
+    return drush_set_error('INVALID_ARGUMENT', 'The project-name "deployment" is reserved');
   }
 
   if ($base_domain === FALSE) {
@@ -483,10 +490,11 @@ function drush_provision_git_project_create($project_name, $base_domain, $instal
     'context_type'    => 'git_project',
     'project_name'    => $project_name,
     'makefile_url'    => $makefile_url,
-    'profile'         => $install_profile,
+    'install_profile' => $install_profile,
     'domain_basename' => $base_domain,
     'db_server'       => $db_server,
     'web_server'      => $web_server,
+    'project_type'    => drush_get_option('project-type', 'makefile'),
   );
 
   drush_backend_invoke_args('provision-save', $args, $options + array('root' => NULL, 'uri' => NULL));
@@ -514,7 +522,7 @@ function _git_project_deployment_info($alias) {
   $out['Branch']           = $p->deployment_branch;
   $out['Current Tag']      = $p->deployment_tag;
   $out['Current Revision'] = $p->deployment_revision;
-  $out['Status']           = $p->status;
+  $out['Status']           = $p->deployment_status;
   $out['Site']             = $p->site;
   $out['Platform']         = $p->platform;
 
@@ -529,7 +537,7 @@ function _git_project_project_info($alias) {
   $p = d($alias);
 
   $out['Project Name']    = $p->project_name;
-  $out['Install Profile'] = $p->profile;
+  $out['Install Profile'] = $p->install_profile;
   $out['Domain Basename'] = $p->domain_basename;
   $out['DB Server']       = $p->db_server;
   $out['Web Server']      = $p->web_server;
@@ -583,6 +591,7 @@ function drush_provision_git_project_post_provision_verify() {
     elseif (d()->type == 'site' && $deployment->site->name != d()->name) {
       drush_log("Git Project: linking this site with the deployment " . $deployment->name, 'ok');
       $deployment->site = d()->name;
+      $deployment->status = 'deployed';
     }
     else {
       // Unknown context, do nothing.
@@ -625,6 +634,7 @@ function drush_provision_git_project_post_provision_install() {
         // Site is being installed on / migrated to a git project platform.
         drush_log("Git Project: linking this site to the deployment " . $deployment->name, 'ok');
         $deployment->site = d()->name;
+        $deployment->status = 'deployed';
 
         if (d()->git_project_deployment->platform->name != d()->platform->name) {
           // Site is being migrated to a platform that is out of sync.
@@ -636,8 +646,10 @@ function drush_provision_git_project_post_provision_install() {
         drush_log("Site is being migrated to a platform that does not using Git Project, breaking all relations", 'ok');
         // Site is being installed on / migrated to a platform that is not a
         // Git Project platform, break relation to the project.
-        d()->git_project_deployment->site = '';
+        $deployment->site = '';
+        $deployment->status = 'defined';
         d()->git_project_deployment = '';
+
         d()->write_alias();
       }
 
@@ -670,6 +682,7 @@ function drush_provision_git_project_post_provision_delete() {
     if (d()->type == 'site') {
       drush_log("Git Project: unlinking this site from the deployment " . $deployment->name, 'ok');
       $deployment->site = '';
+      $deployment->status = 'defined';
     }
     elseif (d()->type == 'platform') {
       drush_log("Git Project: unlinking this platform from the deployment " . $deployment->name, 'ok');
@@ -774,7 +787,7 @@ function _git_project_save_alias($site_alias, $site_hostname, $platform_alias, $
     'platform'                => $platform_alias,
     'server'                  => $project->web_server->name,
     'db_server'               => $project->db_server->name,
-    'profile'                 => $project->profile,
+    'profile'                 => $project->install_profile,
     'git_project_deployment'  => $deployment->name,
     'client_name'             => 'admin',
   );
@@ -797,7 +810,7 @@ function _git_project_save_alias($site_alias, $site_hostname, $platform_alias, $
  * @param string $makefile
  *   Full path to the makefile.
  *
- * @param string $profile
+ * @param string $install_profile
  *   Name of the project to look for in the makefile.
  *
  * @param array  $revspec
@@ -806,7 +819,7 @@ function _git_project_save_alias($site_alias, $site_hostname, $platform_alias, $
  * @return bool
  *   TRUE if successfull
  */
-function _git_project_rewrite_makefile($makefile, $profile, $revspec) {
+function _git_project_rewrite_makefile($makefile, $install_profile, $revspec) {
   // Get content of makefile and parse it.
   if (!($lines = file($makefile))) {
     drush_set_error('MAKEFILE_NOT_FOUND', dt("Could not read makefile at @file", array('@file' => $makefile)));
@@ -832,7 +845,7 @@ function _git_project_rewrite_makefile($makefile, $profile, $revspec) {
 
       // TODO could do more to actually parse the line but this will for now.
       // If we find a project that matches the one we're looking for:
-      if ($profile == $project_name) {
+      if ($install_profile == $project_name) {
 
         // Skip (ie remove) the line if it contains any of the following.
         $skip_list = array(
@@ -887,7 +900,7 @@ function _git_project_rewrite_makefile($makefile, $profile, $revspec) {
     $rev_info = implode(', ', $rev_info);
 
     drush_log(dt('Unable to inject revision information (!revinfo) into makefile, no insert-point for the profile "!profile" found',
-      array('!revinfo' => $rev_info, '!profile' => $profile)
+      array('!revinfo' => $rev_info, '!profile' => $install_profile)
       ), 'error'
     );
     return FALSE;

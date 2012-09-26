@@ -1,10 +1,14 @@
 <?php
+/**
+ * @file
+ * Git Hosting Module
+ */
 
-include_once('hosting_git_project.node.inc');
-include_once('hosting_git_project.form.inc');
+include_once 'hosting_git_project.node.inc';
+include_once 'hosting_git_project.form.inc';
 
 /**
- * Implementation of hook_menu().
+ * Implements of hook_menu().
  */
 function hosting_git_project_menu() {
   $items = array();
@@ -24,40 +28,47 @@ function hosting_git_project_menu() {
 }
 
 /**
- * Implementation of hook_hosting_tasks().
+ * Implements of hook_hosting_tasks().
  */
 function hosting_git_project_hosting_tasks() {
   $tasks = array();
-  $tasks['git_project']['deploy'] = array(
-    'title' => t('Deploy'),
-    'description' => t('Create a deployment'),
-    'dialog' => TRUE,
-
-  );
   $tasks['git_project']['verify'] = array(
     'title' => t('Verify'),
     'description' => t('Verify a project'),
+    'access callback' => 'hosting_git_project_hosting_task_access',
+  );
+
+  $tasks['git_project_deployment']['verify'] = array(
+    'title' => t('Verify'),
+    'description' => t('Verify a deployment'),
+    'dialog' => TRUE,
+    'access callback' => 'hosting_git_project_hosting_task_access',
+  );
+
+  $tasks['git_project_deployment']['redeploy'] = array(
+    'title' => t('Redploy'),
+    'description' => t('Perform redeploy'),
     'dialog' => TRUE,
     'access callback' => 'hosting_git_project_hosting_task_access',
   );
   return $tasks;
 }
 
-
+/**
+ * Implements hook_hosting_task_access().
+ */
 function hosting_git_project_hosting_task_access($node, $task) {
   return TRUE;
 }
 
-
 /**
- * Implementation of hook_perm().
+ * Implements of hook_perm().
  */
 function hosting_git_project_perm() {
   return array(
     'create deploy task',
   );
 }
-
 
 /**
  * Simple list for top level navigation.
@@ -73,17 +84,36 @@ function hosting_git_project_listing() {
   foreach ($projects as $nid => $title) {
     $row = array();
     $node = node_load($nid);
-    // TODO $row[] = array('class' => 'hosting-status' , 'data' => _hosting_node_link($nid));
-    dpm($node);
     $row[] = _hosting_node_link($node->nid, $node->title);
     $row[] = $node->base_domain;
     $row[] = $node->install_profile;
     $rows[] = array('data' => $row);
   }
 
-  return theme('table',  $header, $rows, array('class' => 'project-table'));
+  return theme('table', $header, $rows, array('class' => 'project-table'));
 }
 
+/**
+ * Implements hook_nodeapi().
+ *
+ * Detects when a platform or site is created and creates projects and deployme
+ */
+function hosting_git_project_nodeapi(&$node, $op, $a3 = NULL) {
+
+  if ($node->type == 'platform') {
+    if ($op == 'insert') {
+      dd("platform node inserted");
+      dd($node);
+    }
+  }
+
+  if ($node->type == 'site') {
+    if ($op == 'insert') {
+      dd("platform node inserted");
+      dd($node);
+    }
+  }
+}
 
 /**
  * Small helper function to get platforms that haven't been deleted.
@@ -92,9 +122,64 @@ function _hosting_git_project_get_projects() {
   $return = array();
   $result = db_query("SELECT n.nid, n.title FROM {node} n LEFT JOIN {hosting_git_project} p ON n.nid = p.nid AND n.vid = p.vid
                       WHERE n.type='git_project' AND n.status=1 ORDER BY n.title");
-  while($project = db_fetch_object($result)) {
+  while ($project = db_fetch_object($result)) {
     $return[$project->nid] = $project->title;
   }
   return $return;
 }
 
+/**
+ * Implements hook_hosting_project_context_options().
+ *
+ * This transfers data from the node to the aegir context object (the alias!)
+ * For project entities.
+ */
+function hosting_git_project_hosting_git_project_context_options(&$task) {
+  $task->context_options['project_name'] = $task->ref->title;
+  $task->context_options['makefile_url'] = $task->ref->makefile_url;
+  $task->context_options['project_type'] = $task->ref->project_type;
+  $task->context_options['install_profile'] = $task->ref->install_profile;
+  $task->context_options['domain_basename'] = $task->ref->domain_basename;
+
+  // Resolve references.
+  if (is_numeric($task->ref->web_server)) {
+    $web_server = node_load($task->ref->web_server);
+    $task->context_options['web_server'] = '@' . $web_server->hosting_name;
+  }
+
+  if (is_numeric($task->ref->db_server)) {
+    $db_server = node_load($task->ref->db_server);
+    $task->context_options['db_server'] = '@' . $db_server->hosting_name;
+  }
+}
+
+/**
+ * Implements hook_hosting_project_context_options().
+ *
+ * This transfers data from the node to the aegir context object (the alias!)
+ * For project_deployment entities.
+ */
+function hosting_git_project_hosting_git_project_deployment_context_options(&$task) {
+
+  // Resolve project reference.
+  if (is_numeric($task->ref->git_project)) {
+    $git_project = node_load($task->ref->git_project);
+    $task->context_options['git_project'] = '@' . $git_project->hosting_name;
+  }
+
+  $task->context_options['deployment_name'] = $task->ref->title;
+  $task->context_options['deployment_branch'] = $task->ref->deployment_branch;
+  $task->context_options['deployment_tag'] = $task->ref->deployment_tag;
+  $task->context_options['deployment_revision'] = $task->ref->deployment_revision;
+
+  // Resolve project and site references.
+  if (is_numeric($task->ref->platform)) {
+    $platform = node_load($task->ref->platform);
+    $task->context_options['platform'] = '@' . $platform->hosting_name;
+  }
+
+  if (is_numeric($task->ref->site)) {
+    $site = node_load($task->ref->site);
+    $task->context_options['site'] = '@' . $site->hosting_name;
+  }
+}

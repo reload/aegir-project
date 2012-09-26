@@ -1,14 +1,14 @@
 <?php
 /**
  * @file
- *   Install, update and uninstall for Devshop Projects
+ * Install, update and uninstall for Devshop Projects
  */
 
 /**
- * Implementation of hook_schema().
+ * Implements hook_schema().
  */
 function hosting_git_project_schema() {
- $schema['hosting_git_project'] = array(
+  $schema['hosting_git_project'] = array(
     'fields' => array(
       'vid' => array(
         'type' => 'int',
@@ -24,6 +24,8 @@ function hosting_git_project_schema() {
         'default' => 0,
         'description' => 'Project node ID.',
       ),
+      // Following fields also has to exists in
+      // provisionContext_git_project
       'makefile_url' => array(
         'type' => 'text',
         'size' => 'big',
@@ -43,7 +45,7 @@ function hosting_git_project_schema() {
         'not null' => TRUE,
         'description' => 'Default install profile.',
       ),
-      'base_domain' => array(
+      'domain_basename' => array(
         'type' => 'varchar',
         'length' => 255,
         'not null' => TRUE,
@@ -59,7 +61,7 @@ function hosting_git_project_schema() {
         'not null' => TRUE,
         'default' => 0,
       ),
-      'status' => array(
+      'project_status' => array(
         'type' => 'varchar',
         'not null' => TRUE,
         'length' => 255,
@@ -70,48 +72,52 @@ function hosting_git_project_schema() {
     'primary key' => array('vid'),
   );
 
- $schema['hosting_git_project_deployment'] = array(
+  $schema['hosting_git_project_deployment'] = array(
     'fields' => array(
-      'project_nid' => array(
+      'vid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Node revision ID.',
+      ),
+      'nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+        'description' => 'Deployment node ID.',
+      ),
+      'git_project' => array(
         'type' => 'int',
         'unsigned' => TRUE,
         'not null' => TRUE,
         'default' => 0,
         'description' => 'Project node ID.',
       ),
-      'deployment_id' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => TRUE,
-        'default' => 0,
-        'description' => 'ID of the deployment',
-      ),
-      'name' => array(
+      'deployment_name' => array(
         'type' => 'varchar',
         'not null' => TRUE,
         'length' => 255,
         'description' => 'Name of the site.',
       ),
-      'site_nid' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => FALSE,
-        'default' => 0,
-        'description' => 'ID of the site currently deployed',
-      ),
-      'platform_nid' => array(
-        'type' => 'int',
-        'unsigned' => TRUE,
-        'not null' => FALSE,
-        'default' => 0,
-        'description' => 'ID of the platform currently deployed',
-      ),
-      'revision' => array(
+      'deployment_branch' => array(
         'type' => 'varchar',
-        'not null' => TRUE,
+        'not null' => FALSE,
         'length' => 255,
-        'default' => 'master',
-        'description' => 'Git revspec.',
+        'description' => 'Branch used in the deployment.',
+      ),
+      'deployment_tag' => array(
+        'type' => 'varchar',
+        'not null' => FALSE,
+        'length' => 255,
+        'description' => 'Current tag used.',
+      ),
+      'deployment_revision' => array(
+        'type' => 'varchar',
+        'not null' => FALSE,
+        'length' => 255,
+        'description' => 'SHA of current deployment.',
       ),
       'deploy_status' => array(
         'type' => 'varchar',
@@ -120,15 +126,27 @@ function hosting_git_project_schema() {
         'default' => 'enabled',
         'description' => 'Deployment status',
       ),
+      'site_nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'ID of the site currently deployed',
+      ),
+      'platform_nid' => array(
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => FALSE,
+        'description' => 'ID of the platform currently deployed',
+      ),
     ),
-    'primary key' => array('deployment_id'),
+    'primary key' => array('vid'),
   );
 
   return $schema;
 }
 
 /**
- * Implementation of hook_install().
+ * Implements of hook_install().
  */
 function hosting_git_project_install() {
   // Create tables.
@@ -136,7 +154,7 @@ function hosting_git_project_install() {
 }
 
 /**
- * Implementation of hook_uninstall().
+ * Implements of hook_uninstall().
  */
 function hosting_git_project_uninstall() {
   // Delete tables.
