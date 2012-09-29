@@ -137,11 +137,32 @@ function hosting_git_project_form(&$node) {
 }
 
 /**
- * Validates for platform create.
+ * Implements hook_validate().
  */
-function hosting_git_project_platform_create_form_validate(&$form, &$form_state) {
-  if (empty($form_state['values']['platform_name'])) {
-    form_set_error('install_profile', t('You must include a platform name'));
+function hosting_git_project_validate($node, &$form) {
+  if ($form['#id'] == 'node-form') {
+    if ($node->type == 'git_project') {
+
+      if (!empty($node->domain_basename)) {
+        // Make sure the base-domain is unique.
+        $result = db_fetch_object(
+          db_query('SELECT nid FROM hosting_git_project where domain_basename = "%s"',
+            array($node->domain_basename)
+          )
+        );
+
+        if ($result !== FALSE) {
+          $node = node_load($result->nid);
+          form_set_error('domain_basename',
+            t('The basename is already in use by the project !project',
+              array(
+                '!project' => _hosting_node_link($node->nid, $node->title),
+              )
+            )
+          );
+        }
+      }
+    }
   }
 }
 

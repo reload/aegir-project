@@ -48,12 +48,9 @@ function provision_git_project_drush_command() {
     'bootstrap' => DRUSH_BOOTSTRAP_DRUSH,
   );
 
-  $items['git-project-deploy'] = array(
-    'description' => "Builds a platform from a git repo and installs or migrates a site to it",
-    'arguments' => array(
-      'project' => 'name of the project to be deployed or context starting with @',
-      'deployment' => 'name of the deployment to perform or context starting with @',
-    ),
+
+  $items['provision-git_project_deploy'] = array(
+    'description' => "Builds a platform from a git repo and installs or migrates a site to it. Must be invoked in context of a deployment.",
     'options' => array(
       'tag' => array(
         'description' => 'git tag to use for deployment, optional if the deployment tracks a branch.',
@@ -78,28 +75,17 @@ function provision_git_project_drush_command() {
 /**
  * Verify that both project and deployment exists as aliases.
  */
-function drush_provision_git_project_deploy_validate($project_alias = FALSE, $deployment_shot_name = FALSE) {
-  if ($project_alias === FALSE) {
-    return drush_set_error('MISSING_ARGUMENT', dt('Missing: project'));
-  }
+function drush_provision_git_project_deploy_validate() {
+  // Attempt to load the deployment.
+  $deployment = d();
 
-  if ($deployment_shot_name === FALSE) {
-    return drush_set_error('MISSING_ARGUMENT', dt('Missing: deployment'));
-  }
-
-  // Attempt to load the project.
-  $project = d(_git_project_get_project_alias($project_alias));
-  if (!$project) {
-    // d() has already printed an error messeage, so just return false.
-    return FALSE;
-  }
-
-  // Attempt to load the project.
-  $deployment = d(_git_project_get_deployment_alias($deployment_shot_name, $project), FALSE, FALSE);
-
-  if (!$deployment) {
-    // d() has already printed an error messeage, so just return false.
-    return FALSE;
+  if ($deployment->context_type !== 'git_project_deployment') {
+    return drush_set_error('INVALID_CONTEXT', dt('The command was not invoked in context of a git_project_deployment, the current context is a !type named !name',
+        array(
+          '!type' => $deployment->context_type,
+          '!name' => $deployment->name,
+        )
+      ));
   }
 
   if (!$deployment->site) {
@@ -114,6 +100,12 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
     }
   }
 
+  // Attempt to load the project.
+  $project = d()->git_project;
+  if (!$project || $project->context_type != 'git_project') {
+    return drush_set_error("INVALID_CONTEXT", dt('The deployments project could not be loaded', 'error'));
+  }
+
   $override_platform = drush_get_option('override-platform', FALSE);
   if ($override_platform !== FALSE && !is_readable($override_platform)) {
     return drush_set_error('UNREADABLE',
@@ -122,7 +114,7 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
       ));
   }
 
-  // TODO halt if the user specifeid more than one rev spec.
+  // TODO halt if the user specified more than one rev spec.
 }
 
 /**
@@ -131,12 +123,9 @@ function drush_provision_git_project_deploy_validate($project_alias = FALSE, $de
  * Builds a new platform and either install a new site on it, or migrate an
  * existing site onto it if this is not the first deployment.
  */
-function drush_provision_git_project_deploy($project_name, $deployment_name) {
-  // Generate alias-names and load contexts.
-  $project_alias = _git_project_get_project_alias($project_name);
-  $project = d($project_alias, FALSE, FALSE);
-  $deployment_alias = _git_project_get_deployment_alias($deployment_name, $project);
-  $deployment = d($deployment_alias, FALSE, FALSE);
+function drush_provision_git_project_deploy() {
+  $deployment = d();
+  $project = $deployment->git_project;
 
   // Get revision overrides from (optional) options.
   $tag = $deployment_branch = drush_get_option('tag', FALSE);
@@ -209,11 +198,11 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   }
   $message .= "Ready to proceede?";
 
-  if (!drush_confirm($message)) {
+  if (!drush_confirm($message, 2)) {
     return;
   }
   if ($override_platform === FALSE) {
-    // Download and update the makefile.
+    // Download and update the makefile, then Drush make it.
     $makefile_content = file_get_contents($fetch_url);
     $makefile_path = tempnam(sys_get_temp_dir(), 'git_project_make');
     file_put_contents($makefile_path, $makefile_content);
@@ -249,6 +238,7 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     }
   }
   else {
+    // Override platform specified, copy it and continue.
     drush_copy_dir($override_platform, $platform_destination);
     drush_log(dt('Override platform copied from !platform_path to !platform_destination',
                   array(
@@ -298,9 +288,9 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
   }
   drush_log(dt('Import-task queued in Hostmaster'), 'ok');
 
-
   // Determine whether to install a new site, or migrate an existing.
   if (!$deployment->site) {
+    // The site does not yet exist, so we have to generate the uri and alias.
     $site_alias = _git_project_get_site_alias($deployment, $project);
     $site_uri = str_replace('@', '', $site_alias);
 
@@ -347,19 +337,22 @@ function drush_provision_git_project_deploy($project_name, $deployment_name) {
     // Done.
   }
   else {
+    $site_alias = $deployment->site->name;
+    $site_uri = $deployment->site->uri;
     // Site exists, migrate it onto the new platform.
-    drush_log(dt('Migrating !site onto the new platform !platform',
+    drush_log(dt('Migrating !site with alias !site_alias onto the new platform !platform',
                array(
-                 '!site'      => $site_uri,
-                 '!platform'  => $platform_alias,
+                 '!site'       => $site_uri,
+                 '!site_alias' => $site_alias,
+                 '!platform'   => $platform_alias,
                )
-              )
+              ), 'ok'
     );
 
     provision_backend_invoke($site_alias, 'provision-migrate', array($platform_alias));
     if (drush_get_error()) {
       return drush_set_error("MIGRATION_FAILED", "Could not migrate " .
-        $site_uri . " onto " . $platform_alias);
+        $site_alias . " onto " . $platform_alias);
     }
 
     // Refresh frontend.
@@ -910,4 +903,10 @@ function _git_project_rewrite_makefile($makefile, $install_profile, $revspec) {
   file_put_contents($makefile, implode('', $output_lines));
 
   return TRUE;
+}
+
+
+function drush_provision_git_project_pre_hosting_task(){
+  $task =& drush_get_context('HOSTING_TASK');
+  var_dump($task);
 }

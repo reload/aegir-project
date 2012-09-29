@@ -33,6 +33,38 @@ function hosting_git_project_node_info() {
 }
 
 /**
+ * Ensure we only load projects.
+ */
+function hosting_git_project_node_load($arg) {
+  if (!is_numeric($arg)) {
+    return FALSE;
+  }
+  if ($node = node_load($arg)) {
+    if ($node->type == 'git_project') {
+      return $node;
+    }
+  }
+  return FALSE;
+}
+
+
+/**
+ * Ensure we only load deployments.
+ */
+function hosting_git_project_deployment_node_load($arg) {
+  if (!is_numeric($arg)) {
+    return FALSE;
+  }
+  if ($node = node_load($arg)) {
+    if ($node->type == 'git_project_deployment') {
+      return $node;
+    }
+  }
+  return FALSE;
+}
+
+
+/**
  * Implements of hook_load().
  *
  * hosting_name is used by hosting as the name to add after @ when creating
@@ -114,6 +146,7 @@ function hosting_git_project_insert($node) {
  */
 function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
   if ($node->type == GIT_PROJECT_TYPE) {
+    // View project page.
     modalframe_parent_js();
 
     $node->content['info'] = array(
@@ -125,6 +158,13 @@ function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
       '#type' => 'item',
       '#title' => t('Makefile URL'),
       '#value' => filter_xss($node->makefile_url),
+      '#weight' => -9 ,
+    );
+
+    $node->content['info']['domain_basename'] = array(
+      '#type' => 'item',
+      '#title' => t('Domain basename'),
+      '#value' => filter_xss($node->domain_basename),
       '#weight' => -8,
     );
 
@@ -150,9 +190,12 @@ function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
       );
     }
 
+    // Task list if we're on a page
     if ($page) {
-      // Task list.
       if ($node->nid) {
+        // Node has been created.
+
+        // Task list.
         $node->content['tasks_view'] = array(
           '#type' => 'item',
           '#value' => hosting_task_table($node),
@@ -165,8 +208,14 @@ function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
           'changed' => $node->changed,
         );
         drupal_add_js($settings, 'setting');
-
         drupal_add_js(drupal_get_path('module', 'hosting_task') . '/hosting_task.js');
+
+        // Deployment list
+        $node->content['deployment_list'] = array(
+          '#value' => hosting_git_deployment_deployment_list($node->nid),
+          '#weight' => 20,
+        );
+
       }
     }
   }
@@ -239,7 +288,20 @@ function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
         drupal_add_js(drupal_get_path('module', 'hosting_task') . '/hosting_task.js');
       }
     }
-
   }
   return $node;
+}
+
+
+
+function _git_project_render_deploy_list($project_node){
+    foreach ($queues as $key => $info) {
+    $row = array();
+    $row[] = drupal_render($form[$key]['enabled']);
+    $row[] = drupal_render($form[$key]['description']);
+    $row[] = drupal_render($form[$key]['frequency']);
+    $row[] = drupal_render($form[$key]['last_run']);
+    $rows[] = $row;
+  }
+  $output = theme('table', $header, $rows);
 }

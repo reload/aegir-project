@@ -1,4 +1,7 @@
-# TODO
+# TODO #
+- Disable selected tasks for sites and platforms that are under git project control
+- Add deployment time to deployment spec
+- make hostmaster edit work
 - refactor, omdøb deploy til redeploy og kræv den bliver kaldt i kontekst
 - refactore drush commands up into files
 - implement hosting-import for projects and deployments. project verification should kick off deployment verifications
@@ -9,3 +12,4 @@
 - project list (provision + hostmaster)
 - add somethign about making first request to github to get past the "accept key" prompt
 - output status when failing along the lines "platform created, no site installed, you should probably delete the platform using the command ...."
+- Add Projects to menu when hosting_git_project is installed

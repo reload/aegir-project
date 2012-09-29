@@ -24,6 +24,35 @@ function hosting_git_project_menu() {
     'page callback' => 'hosting_git_project_access',
     'access arguments' => array('view project'));
 
+
+
+  // Add routes for tasks.
+  foreach (array('git_project', 'git_project_deployment') as $type) {
+    if (!($tasks = hosting_available_tasks($type))) {
+      // this is to workaround problems in the upgrade path where the
+      // hook returns nothing (e.g. for server)
+      continue;
+    }
+    foreach ($tasks as $task => $info) {
+      if (empty($info['hidden'])) {
+        // Use a custom loader
+        $path = sprintf("node/%%hosting_%s_node/%s_%s", $type, $type, $task);
+        $items[$path] = array(
+           'title' => $info['title'],
+           'description' => $info['description'],
+           'page callback' => 'drupal_get_form',
+           'page arguments' => array('hosting_task_confirm_form', 1, $task),
+           // TODO
+           // 'access callback' => 'hosting_task_menu_access_csrf',
+           'access callback' => TRUE,
+           // 'access arguments' => array(1, $task),
+           'type' => MENU_CALLBACK,
+         );
+        $items[$path] = array_merge($items[$path], $info);
+      }
+    }
+  }
+
   return $items;
 }
 
@@ -45,19 +74,57 @@ function hosting_git_project_hosting_tasks() {
     'access callback' => 'hosting_git_project_hosting_task_access',
   );
 
-  $tasks['git_project_deployment']['redeploy'] = array(
-    'title' => t('Redploy'),
-    'description' => t('Perform redeploy'),
+  // TODO; use arg() to figure out whether to deploy or redeploy
+  $tasks['git_project_deployment']['git_project_deploy'] = array(
+    'title' => t('Deploy'),
+    'description' => t('Execute (re)deployment of the deployment specification. Please specify any revision overrides that should be used for this deployment.'),
     'dialog' => TRUE,
     'access callback' => 'hosting_git_project_hosting_task_access',
   );
+
   return $tasks;
+}
+
+/**
+ * Implements of hook_hosting_task_TASK_TYPE_form().
+ * hook_hosting_task_TASK_TYPE_form
+ */
+// hosting_task_git-project-redeploy_form
+function hosting_task_git_project_deploy_form($node) {
+  $form['deployment_branch'] = array(
+    '#title' => t('Branch'),
+    '#type' => 'textfield',
+    '#description' => t('Branch to use for this deployment.'),
+    '#size' => 40,
+    '#default_value' => $node->deployment_branch,
+    '#maxlength' => 255,
+  );
+
+  $form['deployment_tag'] = array(
+    '#title' => t('Tag'),
+    '#type' => 'textfield',
+    '#description' => t('Tag to use for this deployment.'),
+    '#size' => 40,
+    '#default_value' => $node->deployment_tag,
+    '#maxlength' => 255,
+  );
+
+  $form['deployment_revision'] = array(
+    '#title' => t('Sha'),
+    '#type' => 'textfield',
+    '#description' => t('SHA to use for this deployment.'),
+    '#size' => 40,
+    '#default_value' => $node->deployment_revision,
+    '#maxlength' => 255,
+  );
+
+  return $form;
 }
 
 /**
  * Implements hook_hosting_task_access().
  */
-function hosting_git_project_hosting_task_access($node, $task) {
+function hosting_git_project_hosting_task_access($node = NULL, $task = NULL) {
   return TRUE;
 }
 
@@ -87,6 +154,29 @@ function hosting_git_project_listing() {
     $row[] = _hosting_node_link($node->nid, $node->title);
     $row[] = $node->base_domain;
     $row[] = $node->install_profile;
+    $rows[] = array('data' => $row);
+  }
+
+  return theme('table', $header, $rows, array('class' => 'project-table'));
+}
+
+/**
+ * Simple list for top level navigation.
+ */
+function hosting_git_deployment_deployment_list($project_nid) {
+  $deployments = _hosting_git_project_get_deployments($project_nid);
+
+  $header = array(t('Name') , t('Branch'), t('Tag'));
+
+  $rows[] = array();
+
+  $total = 0;
+  foreach ($deployments as $nid => $title) {
+    $row = array();
+    $node = node_load($nid);
+    $row[] = _hosting_node_link($node->nid, $node->title);
+    $row[] = $node->deployment_branch;
+    $row[] = $node->deployment_tag;
     $rows[] = array('data' => $row);
   }
 
@@ -124,6 +214,20 @@ function _hosting_git_project_get_projects() {
                       WHERE n.type='git_project' AND n.status=1 ORDER BY n.title");
   while ($project = db_fetch_object($result)) {
     $return[$project->nid] = $project->title;
+  }
+  return $return;
+}
+
+/**
+ * Small helper function to get platforms that haven't been deleted.
+ */
+function _hosting_git_project_get_deployments($project_nid) {
+  $return = array();
+  $result = db_query("SELECT n.nid, n.title FROM {node} n LEFT JOIN {hosting_git_project_deployment} d ON n.nid = d.nid AND n.vid = d.vid
+                      WHERE n.type='git_project_deployment' AND n.status=1 AND d.git_project = %d ORDER BY n.title",
+                      array($project_nid));
+  while ($deployment = db_fetch_object($result)) {
+    $return[$deployment->nid] = $deployment->title;
   }
   return $return;
 }
