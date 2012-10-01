@@ -120,14 +120,14 @@ PROVISION COMMANDS
   - stores a git alias
 
 # First deployment #
-    drush git-project-deploy @git_project_scleroseforeningen nightly
+    drush @git_project_deployment_scleroseforeningen_nightly provision_git_project_deploy
   - downloads revision-specific makefile
   - inject revision info (branch = develop)
   - build platform
   - (first deployment) installes develop site on platform
 
 # Subsequent deployments (update on current branch) #
-    drush git-project-deploy @git_project_scleroseforeningen nightly --tag=1.0.1
+    drush @git_project_deployment_scleroseforeningen_nightly provision_git_project_deploy --tag=1.0.1
   - downloads revision-specific makefile
   - inject revision info (tag = 1.0.1)
   - build platform
