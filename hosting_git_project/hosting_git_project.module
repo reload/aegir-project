@@ -192,15 +192,15 @@ function hosting_git_project_nodeapi(&$node, $op, $a3 = NULL) {
 
   if ($node->type == 'platform') {
     if ($op == 'insert') {
-      dd("platform node inserted");
-      dd($node);
+      //dd("platform node inserted");
+      //dd($node);
     }
   }
 
   if ($node->type == 'site') {
     if ($op == 'insert') {
-      dd("platform node inserted");
-      dd($node);
+      //dd("platform node inserted");
+      //dd($node);
     }
   }
 }
