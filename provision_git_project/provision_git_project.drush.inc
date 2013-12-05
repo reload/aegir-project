@@ -154,7 +154,7 @@ function drush_provision_git_project_deploy() {
   }
 
   // TODO, make up clever platform name, based on timestamps and/or revisions.
-  $platform_alias = _git_project_get_platform_alias($deployment);
+  $platform_alias = _git_project_get_platform_alias($deployment, $choosen_revtype, $rev);
 
   // Construct the platform destination path, check that it does not already
   // exist.
@@ -164,88 +164,17 @@ function drush_provision_git_project_deploy() {
     return FALSE;
   }
 
-  // Parse the make-file url and prepare revision specific version.
-  $fetch_url = _git_project_prepare_github_raw_url($project->makefile_url, $rev);
-  if (!$fetch_url) {
-    return drush_set_error("MAKEFILE", dt('Invalid makefile URL: Could not inject !revtype !rev into !url',
-                                           array(
-                                             '!url' => $project->makefile_url,
-                                             '!revtype' => $choosen_revtype,
-                                             '!rev' => $rev,
-                                           )
-                                          ));
-  }
 
-  // Before we start actually doing anything, confirm with the user.
-  $message  = "This command will\n";
-  if ($override_platform === FALSE) {
-    $message .= "- Create a new platform named \"$platform_alias\" using the {$choosen_revtype} \"{$rev}\"\n";
-  }
-  else {
-    $message .= "- Create a new platform named \"$platform_alias\" by copying {$override_platform}\n";
-  }
-
-
-  if (!$deployment->site) {
-    $message .= dt('- Install a new site using the installation profile "!profile" on the platform with the alias !sitename',
-                  array(
-                    '!profile' => $project->install_profile,
-                    '!sitename' => _git_project_get_site_alias($deployment, $project))
-                  ) .  "\n";
-  }
-  else {
-    $message .= "- Migrate the existing site \"{$deployment->site->uri}\" onto the platform\n";
-  }
-  $message .= "Ready to proceede?";
-
-  if (!drush_confirm($message, 2)) {
-    return;
-  }
-  if ($override_platform === FALSE) {
-    // Download and update the makefile, then Drush make it.
-    $makefile_content = file_get_contents($fetch_url);
-    $makefile_path = tempnam(sys_get_temp_dir(), 'git_project_make');
-    file_put_contents($makefile_path, $makefile_content);
-
-    // Prepare revision argument for the build.
-    if ($sha !== FALSE) {
-      $repo_info['revision'] = $sha;
-    }
-    elseif ($branch !== FALSE) {
-      $repo_info['branch'] = $branch;
-    }
-    elseif ($tag !== FALSE) {
-      $repo_info['tag'] = $tag;
-    }
-    else {
-      // Default to deployment branch specified in master if the user did not
-      // override.
-      $repo_info['branch'] = $deployment->deployment_branch;
-    }
-
-    // Rewrite makefile using information about the installation profile and the
-    // repository.
-    if (!_git_project_rewrite_makefile($makefile_path, $project->install_profile, $repo_info)) {
+  if(empty($project->project_type) || $project->project_type == 'makefile' ) {
+     if(!drush_provision_git_project_platform_by_make($project, $rev, $choosen_revtype, $override_platform, $platform_alias, $deployment, $sha, $repo_info, $branch, $tag, $platform_destination)){
+       return FALSE;
+     }
+  } else if($project->project_type == 'git') {
+    if(!drush_provision_git_project_platform_by_git($revtype, $rev, $git_url, $platform_destination)){
       return FALSE;
     }
-
-    drush_log(dt('Building platform !platform using Drush Make', array('!platform' => $platform_alias)), 'ok');
-    drush_log(dt('Using makefile !makefile', array('!makefile' => $makefile_path)), 'notice');
-
-    drush_backend_invoke_args('make', array($makefile_path, $platform_destination));
-    if (drush_get_error()) {
-      return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
-    }
   }
-  else {
-    // Override platform specified, copy it and continue.
-    drush_copy_dir($override_platform, $platform_destination);
-    drush_log(dt('Override platform copied from !platform_path to !platform_destination',
-                  array(
-                    '!platform_path'        => $override_platform,
-                    '!platform_destination' => $platform_destination,
-                  )), 'ok');
-  }
+
   drush_log(dt('Platform "!platform" prepared, creating alias', array('!platform' => $platform_alias)), 'ok');
 
   // Create the drush alias file for the platform.
@@ -364,6 +293,135 @@ function drush_provision_git_project_deploy() {
 
     drush_log(dt('Site has been verified and migrated'), 'ok');
   }
+}
+
+/**
+ * @param $project
+ * @param $rev
+ * @param $revtype
+ * @param $override_platform
+ * @param $platform_alias
+ * @param $deployment
+ * @param $sha
+ * @param $repo_info
+ * @param $branch
+ * @param $tag
+ * @param $platform_destination
+ * @return bool
+ */
+function drush_provision_git_project_platform_by_make($project, $rev, $revtype, $override_platform, $platform_alias, $deployment, $sha, $repo_info, $branch, $tag, $platform_destination) {
+// Parse the make-file url and prepare revision specific version.
+  $fetch_url = _git_project_prepare_github_raw_url($project->makefile_url, $rev);
+  if (!$fetch_url) {
+    return drush_set_error("MAKEFILE", dt('Invalid makefile URL: Could not inject !revtype !rev into !url',
+      array(
+        '!url'     => $project->makefile_url,
+        '!revtype' => $revtype,
+        '!rev'     => $rev,
+      )
+    ));
+  }
+
+  // Before we start actually doing anything, confirm with the user.
+  $message = "This command will\n";
+  if ($override_platform === FALSE) {
+    $message .= "- Create a new platform named \"$platform_alias\" using the {$revtype} \"{$rev}\"\n";
+  }
+  else {
+    $message .= "- Create a new platform named \"$platform_alias\" by copying {$override_platform}\n";
+  }
+
+
+  if (!$deployment->site) {
+    $message .= dt('- Install a new site using the installation profile "!profile" on the platform with the alias !sitename',
+        array(
+          '!profile'  => $project->install_profile,
+          '!sitename' => _git_project_get_site_alias($deployment, $project)
+        )
+      ) . "\n";
+  }
+  else {
+    $message .= "- Migrate the existing site \"{$deployment->site->uri}\" onto the platform\n";
+  }
+  $message .= "Ready to proceede?";
+
+  if (!drush_confirm($message, 2)) {
+    return;
+  }
+  if ($override_platform === FALSE) {
+    // Download and update the makefile, then Drush make it.
+    $makefile_content = file_get_contents($fetch_url);
+    $makefile_path = tempnam(sys_get_temp_dir(), 'git_project_make');
+    file_put_contents($makefile_path, $makefile_content);
+
+    // Prepare revision argument for the build.
+    if ($sha !== FALSE) {
+      $repo_info['revision'] = $sha;
+    }
+    elseif ($branch !== FALSE) {
+      $repo_info['branch'] = $branch;
+    }
+    elseif ($tag !== FALSE) {
+      $repo_info['tag'] = $tag;
+    }
+    else {
+      // Default to deployment branch specified in master if the user did not
+      // override.
+      $repo_info['branch'] = $deployment->deployment_branch;
+    }
+
+    // Rewrite makefile using information about the installation profile and the
+    // repository.
+    if (!_git_project_rewrite_makefile($makefile_path, $project->install_profile, $repo_info)) {
+      return FALSE;
+    }
+
+    drush_log(dt('Building platform !platform using Drush Make', array('!platform' => $platform_alias)), 'ok');
+    drush_log(dt('Using makefile !makefile', array('!makefile' => $makefile_path)), 'notice');
+
+    // TODO: Grab "custom drush" information from a configuration.
+    $custom_drush = '/var/aegir/tools/drush-5.8/drush';
+
+    if ($custom_drush !== FALSE) {
+      // Use custom Drush instead of aegir native.
+      if (!drush_shell_exec("$custom_drush make %s %s", $makefile_path, $platform_destination)) {
+        return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
+      }
+    }
+    else {
+      drush_backend_invoke_args('make', array(
+        $makefile_path,
+        $platform_destination
+      ));
+      if (drush_get_error()) {
+        return drush_set_error("DRUSH_MAKE_FAILED", "Could not build platform from makefile");
+      }
+    }
+  }
+  else {
+    // Override platform specified, copy it and continue.
+    drush_copy_dir($override_platform, $platform_destination);
+    drush_log(dt('Override platform copied from !platform_path to !platform_destination',
+      array(
+        '!platform_path'        => $override_platform,
+        '!platform_destination' => $platform_destination,
+      )), 'ok');
+  }
+  return TRUE;
+}
+
+function drush_provision_git_project_platform_by_git($revtype, $rev, $git_url, $platform_destination) {
+  if (!drush_shell_exec("git clone %s %s", $git_url, $platform_destination)) {
+    return drush_set_error("DRUSH_MAKE_FAILED", "Could not clone repository $git_url into $platform_destination");
+  }
+
+  if($revtype == 'branch') {
+    if (!drush_shell_exec("git --work-tree=%s --git-dir=%s checkout %s", $platform_destination, $platform_destination . "/.git", $rev)) {
+      return drush_set_error("DRUSH_MAKE_FAILED", "Could not clone repository $git_url into $platform_destination");
+    }
+  }
+
+  return TRUE;
 }
 
 /**
@@ -727,9 +785,9 @@ function _git_project_prepare_github_raw_url($url, $revspec = 'master') {
 /**
  * Generates a platform alias.
  */
-function _git_project_get_platform_alias($deployment) {
+function _git_project_get_platform_alias($deployment,  $revtype, $rev) {
   // TODO, might have to be deterministic.
-  return _git_project_get_alias($deployment->git_project->project_name . '_' . $deployment->deployment_name . '_' . time(), 'platform_');
+  return _git_project_get_alias($deployment->git_project->project_name . '_' . $deployment->deployment_name . '_' . strtolower($revtype) . '_' . strtolower($rev) . '_' . date("Ymd_His") , 'platform_');
 }
 
 /**

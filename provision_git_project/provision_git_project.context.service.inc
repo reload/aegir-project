@@ -60,7 +60,7 @@ class provisionContext_git_project extends provisionContext {
   static function option_documentation() {
     return array(
       '--project_basename' => 'Project: Project name',
-      '--makefile_url' => 'Project: URL to the makefile including token and username if not private repo',
+      '--makefile_url' => 'Project: URL to the makefile/git repo including token and username if not private repo',
       '--project_name' => 'Project: Name to be used in administrative interfaces',
       '--profile' => 'Project: Installprofile to used',
       '--db_server' => 'Project: The db server project sites will run on',

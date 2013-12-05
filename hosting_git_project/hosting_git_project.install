@@ -32,6 +32,7 @@ function hosting_git_project_schema() {
         'not null' => TRUE,
         'description' => 'URL to the makefile.',
       ),
+      // TODO: should probably just be git pr default.
       'project_type' => array(
         'type' => 'varchar',
         'not null' => TRUE,

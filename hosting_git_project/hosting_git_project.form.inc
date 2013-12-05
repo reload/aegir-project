@@ -23,8 +23,14 @@ function hosting_git_project_form(&$node) {
     $form['makefile_url'] = array(
       '#type' => 'textarea',
       '#title' => t('Makefile URL'),
-      '#required' => TRUE,
       '#description' => t('URL to the makefile. Make sure to include username and token if the URL is a raw github URL is used and the repository is private.'),
+      '#default_value' => $node->makefile_url,
+    );
+
+    $form['makefile_url'] = array(
+      '#type' => 'textarea',
+      '#title' => t('Makefile URL or git repository'),
+      '#description' => t('Makefile URL: Make sure to include username and token if the URL is a raw github URL is used and the repository is private.'),
       '#default_value' => $node->makefile_url,
     );
 
@@ -34,9 +40,11 @@ function hosting_git_project_form(&$node) {
       '#required' => TRUE,
       '#description' => t('Project type (only makefile is supported currently)'),
       '#default_value' => 'makefile',
-      '#options' => array('makefile' => t('Makefile')),
+      '#options' => array(
+        'makefile' => t('Makefile'),
+        'git' => t('Git'),
+      ),
     );
-
 
     $form['install_profile'] = array(
       '#type' => 'textfield',

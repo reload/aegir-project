@@ -156,7 +156,7 @@ function hosting_git_project_view($node, $teaser = FALSE, $page = FALSE) {
 
     $node->content['info']['makefile_url'] = array(
       '#type' => 'item',
-      '#title' => t('Makefile URL'),
+      '#title' => t('Makefile URL / Git URL'),
       '#value' => filter_xss($node->makefile_url),
       '#weight' => -9 ,
     );
