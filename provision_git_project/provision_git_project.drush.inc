@@ -175,6 +175,12 @@ function drush_provision_git_project_deploy() {
     }
   }
 
+  // Dump a simple version.txt.
+  $version_txt_path = $platform_destination . "/version.txt";
+  if (!file_exists($version_txt_path)) {
+    file_put_contents($version_txt_path, 'Revision-type: ' . $choosen_revtype . "\n" . 'Value: ' . $rev);
+  }
+
   drush_log(dt('Platform "!platform" prepared, creating alias', array('!platform' => $platform_alias)), 'ok');
 
   // Create the drush alias file for the platform.
@@ -410,16 +416,35 @@ function drush_provision_git_project_platform_by_make($project, $rev, $revtype, 
   return TRUE;
 }
 
+/**
+ * Create a platform from git.
+ *
+ * @param $revtype
+ * @param $rev
+ * @param $git_url
+ * @param $platform_destination
+ * @return mixed
+ */
 function drush_provision_git_project_platform_by_git($revtype, $rev, $git_url, $platform_destination) {
   if (!drush_shell_exec("git clone %s %s", $git_url, $platform_destination)) {
     return drush_set_error("DRUSH_MAKE_FAILED", "Could not clone repository $git_url into $platform_destination");
   }
 
-  if($revtype == 'branch') {
-    if (!drush_shell_exec("git --work-tree=%s --git-dir=%s checkout %s", $platform_destination, $platform_destination . "/.git", $rev)) {
-      return drush_set_error("DRUSH_MAKE_FAILED", "Could not clone repository $git_url into $platform_destination");
-    }
+  if (!drush_shell_exec("git --work-tree=%s --git-dir=%s checkout %s", $platform_destination, $platform_destination . "/.git", $rev)) {
+    return drush_set_error("DRUSH_MAKE_FAILED", "Could not clone repository $git_url into $platform_destination");
   }
+
+  // Produce version.txt
+  $time_of_build = date('Y-m-d H:i:s');
+  $sha = `git --work-tree=%s --git-dir=%s rev-parse HEAD`;
+  $version_txt_content =  <<<EOT
+------------
+Time of build: $time_of_build
+$revtype: $rev
+SHA: $sha
+EOT;
+
+  file_put_contents($platform_destination . '/version.txt', $version_txt_content);
 
   return TRUE;
 }
