@@ -164,13 +164,13 @@ function drush_provision_git_project_deploy() {
     return FALSE;
   }
 
-
-  if(empty($project->project_type) || $project->project_type == 'makefile' ) {
-     if(!drush_provision_git_project_platform_by_make($project, $rev, $choosen_revtype, $override_platform, $platform_alias, $deployment, $sha, $repo_info, $branch, $tag, $platform_destination)){
+  if (empty($project->project_type) || $project->project_type == 'makefile') {
+     if (!drush_provision_git_project_platform_by_make($project, $rev, $choosen_revtype, $override_platform, $platform_alias, $deployment, $sha, $repo_info, $branch, $tag, $platform_destination)) {
        return FALSE;
      }
-  } else if($project->project_type == 'git') {
-    if(!drush_provision_git_project_platform_by_git($revtype, $rev, $git_url, $platform_destination)){
+  }
+  elseif ($project->project_type == 'git') {
+    if (!drush_provision_git_project_platform_by_git($choosen_revtype, $rev, $project->makefile_url, $platform_destination)) {
       return FALSE;
     }
   }
@@ -787,7 +787,7 @@ function _git_project_prepare_github_raw_url($url, $revspec = 'master') {
  */
 function _git_project_get_platform_alias($deployment,  $revtype, $rev) {
   // TODO, might have to be deterministic.
-  return _git_project_get_alias($deployment->git_project->project_name . '_' . $deployment->deployment_name . '_' . strtolower($revtype) . '_' . strtolower($rev) . '_' . date("Ymd_His") , 'platform_');
+  return _git_project_get_alias(str_replace('.', '', $deployment->git_project->project_name) . '_' . $deployment->deployment_name . '_' . strtolower($revtype) . '_' . strtolower($rev) . '_' . date("Ymd_His") , 'platform_');
 }
 
 /**
