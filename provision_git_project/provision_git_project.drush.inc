@@ -436,12 +436,16 @@ function drush_provision_git_project_platform_by_git($revtype, $rev, $git_url, $
 
   // Produce version.txt
   $time_of_build = date('Y-m-d H:i:s');
-  $sha = `git --work-tree=%s --git-dir=%s rev-parse HEAD`;
-  $version_txt_content =  <<<EOT
+  $sha_line = '';
+  if (drush_shell_exec("git --work-tree=%s --git-dir=%s rev-parse HEAD", $platform_destination, $platform_destination . "/.git")) {
+    $sha_line = 'SHA: ' . implode(' ', drush_shell_exec_output());
+  }
+  
+  $version_txt_content = <<<EOT
 ------------
 Time of build: $time_of_build
 $revtype: $rev
-SHA: $sha
+$sha_line
 EOT;
 
   file_put_contents($platform_destination . '/version.txt', $version_txt_content);
