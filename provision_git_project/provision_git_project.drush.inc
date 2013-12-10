@@ -812,7 +812,7 @@ function _git_project_prepare_github_raw_url($url, $revspec = 'master') {
  */
 function _git_project_get_platform_alias($deployment,  $revtype, $rev) {
   // TODO, might have to be deterministic.
-  return _git_project_get_alias(str_replace('.', '', $deployment->git_project->project_name) . '_' . $deployment->deployment_name . '_' . strtolower($revtype) . '_' . strtolower($rev) . '_' . date("Ymd_His") , 'platform_');
+  return _git_project_get_alias(str_replace('.', '', $deployment->git_project->project_name) . '_' . $deployment->deployment_name . '_' . substr(strtolower($revtype),0,1) . '_' . strtolower($rev) . '_' . date("ymdHis") , 'platform_');
 }
 
 /**
